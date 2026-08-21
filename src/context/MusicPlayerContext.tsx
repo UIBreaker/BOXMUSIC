@@ -19,8 +19,13 @@ import {
   saveStoredPlaylists,
   getStoredOfflineSongIds,
   saveStoredOfflineSongIds,
+  getStoredCustomSongsMeta,
+  saveStoredCustomSongsMeta,
   getStoredTheme,
   saveStoredTheme,
+  saveCustomSongToIndexedDB,
+  getCustomSongBlobUrl,
+  deleteCustomSongFromIndexedDB,
   saveAudioBlobOffline,
   removeAudioBlobOffline,
   getOfflineAudioBlobUrl,
@@ -50,10 +55,13 @@ interface MusicContextType {
   userPlaylists: Playlist[];
   turntableMode: boolean;
   
-  // Offline & Storage States
+  // Custom Uploads & Offline States
+  customSongs: Song[];
+  allSongs: Song[];
   offlineSongIds: Set<string>;
   storageUsedBytes: number;
   isSyncModalOpen: boolean;
+  isUploadModalOpen: boolean;
   downloadingSongIds: Set<string>;
 
   // Desktop Pro States
@@ -87,6 +95,11 @@ interface MusicContextType {
   toggleTurntableMode: () => void;
   getAudioWaveform: () => number[];
   
+  // Custom Upload & Delete Actions
+  uploadCustomSong: (file: File, meta: { title: string; artist: string; album?: string; coverUrl?: string }) => Promise<Song>;
+  deleteSong: (songId: string) => Promise<void>;
+  setIsUploadModalOpen: (val: boolean) => void;
+
   // Offline & Storage Actions
   toggleOfflineDownload: (song: Song) => Promise<void>;
   clearAllOfflineStorage: () => Promise<void>;
@@ -118,6 +131,9 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [playerSubTab, setPlayerSubTab] = useState<PlayerSubTab>('player');
   const [mainTab, setMainTab] = useState<MainTab>('home');
   
+  // Custom songs list
+  const [customSongs, setCustomSongs] = useState<Song[]>(() => getStoredCustomSongsMeta());
+
   // Load persistent states
   const [accentTheme, setAccentThemeState] = useState<AccentTheme>(() =>
     getStoredTheme(ACCENT_THEMES[0])
@@ -139,6 +155,7 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [storageUsedBytes, setStorageUsedBytes] = useState<number>(0);
   const [downloadingSongIds, setDownloadingSongIds] = useState<Set<string>>(new Set());
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
 
   // Desktop Pro States
   const [desktopRightPanelTab, setDesktopRightPanelTab] = useState<DesktopRightPanelTab>('nowPlaying');
@@ -152,7 +169,10 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const synthIntervalRef = useRef<number | null>(null);
 
-  // Update storage size calculation on mount and state changes
+  // All songs combined
+  const allSongs = [...customSongs, ...MOCK_SONGS];
+
+  // Refresh storage calculation
   const refreshStorageSize = async () => {
     const bytes = await calculateTotalStorageUsed();
     setStorageUsedBytes(bytes);
@@ -160,7 +180,7 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   useEffect(() => {
     refreshStorageSize();
-  }, [offlineSongIds]);
+  }, [offlineSongIds, customSongs]);
 
   // Initialize Audio
   useEffect(() => {
@@ -257,9 +277,14 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
     setHistory((prev) => [song, ...prev.filter((s) => s.id !== song.id)].slice(0, 20));
 
     if (audioRef.current) {
-      // Check if song is cached offline in IndexedDB
-      const offlineBlobUrl = await getOfflineAudioBlobUrl(song.id);
-      audioRef.current.src = offlineBlobUrl || song.audioUrl;
+      let playUrl: string | null = null;
+      if (song.isCustomUpload) {
+        playUrl = await getCustomSongBlobUrl(song.id);
+      } else {
+        playUrl = await getOfflineAudioBlobUrl(song.id);
+      }
+
+      audioRef.current.src = playUrl || song.audioUrl;
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {
         // Fallback handles smoothly
@@ -269,8 +294,8 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const togglePlay = () => {
     if (!currentSong) {
-      if (MOCK_SONGS.length > 0) {
-        playSong(MOCK_SONGS[0]);
+      if (allSongs.length > 0) {
+        playSong(allSongs[0]);
       }
       return;
     }
@@ -289,7 +314,7 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   const nextSong = () => {
     if (queue.length === 0) {
       if (repeatMode === 'all' && history.length > 0) {
-        const resetQueue = [...MOCK_SONGS];
+        const resetQueue = [...allSongs];
         const next = resetQueue[0];
         playSong(next, resetQueue);
       } else {
@@ -382,7 +407,6 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
         next.delete(songId);
       } else {
         next.add(songId);
-        // Trigger subtle confetti burst on like
         if (event) {
           const rect = event.currentTarget.getBoundingClientRect();
           const x = (rect.left + rect.width / 2) / window.innerWidth;
@@ -458,6 +482,114 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
     setTurntableMode((prev) => !prev);
   };
 
+  // Upload Custom Song from user file (MP3 / MP4)
+  const uploadCustomSong = async (
+    file: File,
+    meta: { title: string; artist: string; album?: string; coverUrl?: string }
+  ): Promise<Song> => {
+    const songId = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    
+    // Estimate or calculate duration
+    const tempAudio = new Audio(URL.createObjectURL(file));
+    let calculatedDuration = 210;
+    await new Promise<void>((res) => {
+      tempAudio.onloadedmetadata = () => {
+        if (tempAudio.duration && !isNaN(tempAudio.duration)) {
+          calculatedDuration = Math.floor(tempAudio.duration);
+        }
+        res();
+      };
+      setTimeout(res, 800);
+    });
+
+    const newSong: Song = {
+      id: songId,
+      title: meta.title || file.name.replace(/\.[^/.]+$/, ''),
+      artist: meta.artist || 'Bạn (Tải lên)',
+      album: meta.album || 'Nhạc Tải Lên Cá Nhân',
+      coverUrl:
+        meta.coverUrl ||
+        'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop',
+      duration: calculatedDuration,
+      audioUrl: '', // blob will be retrieved from IndexedDB
+      genre: 'Nhạc Cá Nhân',
+      mood: ['Tất cả', 'Chill & Thư giãn'],
+      isLiked: true,
+      plays: 1,
+      releaseYear: new Date().getFullYear(),
+      accentColor: accentTheme.color,
+      isCustomUpload: true,
+      fileSize: file.size,
+      uploadedAt: new Date().toISOString(),
+    };
+
+    // Save to IndexedDB
+    await saveCustomSongToIndexedDB(newSong, file);
+
+    // Save meta to state & localStorage
+    setCustomSongs((prev) => {
+      const updated = [newSong, ...prev];
+      saveStoredCustomSongsMeta(updated);
+      return updated;
+    });
+
+    // Auto-like newly uploaded song
+    setLikedSongIds((prev) => {
+      const next = new Set(prev).add(newSong.id);
+      saveStoredLikedSongs(next);
+      return next;
+    });
+
+    refreshStorageSize();
+    return newSong;
+  };
+
+  // Delete Song (Custom upload or clean up)
+  const deleteSong = async (songId: string): Promise<void> => {
+    // If it's a custom uploaded song, remove from IndexedDB & customSongs state
+    await deleteCustomSongFromIndexedDB(songId);
+    setCustomSongs((prev) => {
+      const updated = prev.filter((s) => s.id !== songId);
+      saveStoredCustomSongsMeta(updated);
+      return updated;
+    });
+
+    // Remove from liked if exists
+    setLikedSongIds((prev) => {
+      const next = new Set(prev);
+      next.delete(songId);
+      saveStoredLikedSongs(next);
+      return next;
+    });
+
+    // Remove from offline cache
+    await removeAudioBlobOffline(songId);
+    setOfflineSongIds((prev) => {
+      const next = new Set(prev);
+      next.delete(songId);
+      saveStoredOfflineSongIds(next);
+      return next;
+    });
+
+    // Remove from playlists
+    setUserPlaylists((prev) => {
+      const updated = prev.map((pl) => ({
+        ...pl,
+        songIds: pl.songIds.filter((id) => id !== songId),
+        trackCount: pl.songIds.filter((id) => id !== songId).length,
+      }));
+      saveStoredPlaylists(updated);
+      return updated;
+    });
+
+    // If currently playing, move next
+    if (currentSong?.id === songId) {
+      nextSong();
+    }
+
+    refreshStorageSize();
+  };
+
   // Offline Download handler
   const toggleOfflineDownload = async (song: Song) => {
     const isDownloaded = offlineSongIds.has(song.id);
@@ -496,7 +628,7 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   // Export / Import library backup
   const exportLibraryBackup = () => {
-    const jsonStr = generateBackupJSON(likedSongIds, userPlaylists, offlineSongIds);
+    const jsonStr = generateBackupJSON(likedSongIds, userPlaylists, offlineSongIds, customSongs);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -524,10 +656,15 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
       setOfflineSongIds(newOffline);
       saveStoredOfflineSongIds(newOffline);
     }
+
+    if (backup.customSongs) {
+      setCustomSongs(backup.customSongs);
+      saveStoredCustomSongsMeta(backup.customSongs);
+    }
     return true;
   };
 
-  // Generate simulated dynamic waveform bars for visualizer
+  // Generate simulated dynamic waveform bars
   const getAudioWaveform = () => {
     if (!isPlaying) {
       return [15, 20, 15, 10, 25, 15, 20, 10, 15, 20, 15, 10];
@@ -565,9 +702,12 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
         likedSongIds,
         userPlaylists,
         turntableMode,
+        customSongs,
+        allSongs,
         offlineSongIds,
         storageUsedBytes,
         isSyncModalOpen,
+        isUploadModalOpen,
         downloadingSongIds,
         desktopRightPanelTab,
         isDesktopRightPanelOpen,
@@ -596,6 +736,9 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
         addSongToPlaylist,
         toggleTurntableMode,
         getAudioWaveform,
+        uploadCustomSong,
+        deleteSong,
+        setIsUploadModalOpen,
         toggleOfflineDownload,
         clearAllOfflineStorage,
         exportLibraryBackup,

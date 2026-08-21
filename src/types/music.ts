@@ -19,6 +19,9 @@ export interface Song {
   plays?: number;
   releaseYear?: number;
   accentColor?: string;
+  isCustomUpload?: boolean;
+  fileSize?: number;
+  uploadedAt?: string;
 }
 
 export interface Playlist {

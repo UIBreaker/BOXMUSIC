@@ -10,6 +10,7 @@ import {
   ArrowDownToLine,
   CheckCircle2,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -39,6 +40,7 @@ export const SongListItem: React.FC<SongListItemProps> = ({
     offlineSongIds,
     downloadingSongIds,
     toggleOfflineDownload,
+    deleteSong,
   } = useMusic();
 
   const [showMenu, setShowMenu] = useState(false);
@@ -46,7 +48,7 @@ export const SongListItem: React.FC<SongListItemProps> = ({
 
   const isCurrent = currentSong?.id === song.id;
   const isLiked = likedSongIds.has(song.id);
-  const isDownloaded = offlineSongIds.has(song.id);
+  const isDownloaded = offlineSongIds.has(song.id) || song.isCustomUpload;
   const isDownloading = downloadingSongIds.has(song.id);
 
   const formatTime = (secs: number) => {
@@ -62,6 +64,14 @@ export const SongListItem: React.FC<SongListItemProps> = ({
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
     toggleOfflineDownload(song);
+  };
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm(`Bạn có chắc muốn xóa bài hát "${song.title}" khỏi thư viện?`)) {
+      deleteSong(song.id);
+      setShowMenu(false);
+    }
   };
 
   return (
@@ -124,6 +134,11 @@ export const SongListItem: React.FC<SongListItemProps> = ({
             {isDownloaded && (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400/20 flex-shrink-0" />
             )}
+            {song.isCustomUpload && (
+              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 font-extrabold uppercase flex-shrink-0">
+                Tải lên
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-zinc-400 truncate">
             <span className="truncate">{song.artist}</span>
@@ -138,25 +153,27 @@ export const SongListItem: React.FC<SongListItemProps> = ({
         className="flex items-center gap-1 flex-shrink-0"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Offline Download Button */}
-        <button
-          onClick={handleDownload}
-          disabled={isDownloading}
-          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-            isDownloaded
-              ? 'text-emerald-400'
-              : 'text-zinc-500 hover:text-zinc-200 opacity-80 sm:opacity-0 group-hover:opacity-100'
-          }`}
-          title={isDownloaded ? 'Đã lưu ngoại tuyến (Bấm để xóa)' : 'Tải về nghe ngoại tuyến'}
-        >
-          {isDownloading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-          ) : isDownloaded ? (
-            <CheckCircle2 className="w-4 h-4" />
-          ) : (
-            <ArrowDownToLine className="w-4 h-4" />
-          )}
-        </button>
+        {/* Offline Download Button (hide if already custom uploaded) */}
+        {!song.isCustomUpload && (
+          <button
+            onClick={handleDownload}
+            disabled={isDownloading}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              isDownloaded
+                ? 'text-emerald-400'
+                : 'text-zinc-500 hover:text-zinc-200 opacity-80 sm:opacity-0 group-hover:opacity-100'
+            }`}
+            title={isDownloaded ? 'Đã lưu ngoại tuyến (Bấm để xóa)' : 'Tải về nghe ngoại tuyến'}
+          >
+            {isDownloading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+            ) : isDownloaded ? (
+              <CheckCircle2 className="w-4 h-4" />
+            ) : (
+              <ArrowDownToLine className="w-4 h-4" />
+            )}
+          </button>
+        )}
 
         {/* Like Button */}
         <button
@@ -209,13 +226,15 @@ export const SongListItem: React.FC<SongListItemProps> = ({
                     <span>Thêm vào hàng đợi</span>
                   </button>
 
-                  <button
-                    onClick={handleDownload}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
-                  >
-                    <ArrowDownToLine className="w-4 h-4 text-cyan-400" />
-                    <span>{isDownloaded ? 'Xóa khỏi bộ nhớ Offline' : 'Tải về nghe Offline'}</span>
-                  </button>
+                  {!song.isCustomUpload && (
+                    <button
+                      onClick={handleDownload}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
+                    >
+                      <ArrowDownToLine className="w-4 h-4 text-cyan-400" />
+                      <span>{isDownloaded ? 'Xóa khỏi bộ nhớ Offline' : 'Tải về nghe Offline'}</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => setShowPlaylistPicker(!showPlaylistPicker)}
@@ -244,6 +263,17 @@ export const SongListItem: React.FC<SongListItemProps> = ({
                         </button>
                       ))}
                     </div>
+                  )}
+
+                  {/* Delete option for custom songs or removing from library */}
+                  {song.isCustomUpload && (
+                    <button
+                      onClick={handleDelete}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Xóa bài hát khỏi máy</span>
+                    </button>
                   )}
                 </motion.div>
               </>

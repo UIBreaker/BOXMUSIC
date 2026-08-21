@@ -6,11 +6,13 @@ const STORAGE_KEYS = {
   HISTORY: 'boxmusic_history',
   ACCENT_THEME: 'boxmusic_accent_theme',
   OFFLINE_SONG_IDS: 'boxmusic_offline_song_ids',
+  CUSTOM_SONGS_META: 'boxmusic_custom_songs_meta',
 };
 
 const DB_NAME = 'BoxMusicAudioCacheDB';
-const DB_VERSION = 1;
-const STORE_NAME = 'offline_audio_tracks';
+const DB_VERSION = 2;
+const STORE_OFFLINE = 'offline_audio_tracks';
+const STORE_CUSTOM_UPLOADS = 'custom_uploaded_tracks';
 
 // Open or initialize IndexedDB
 function openIndexedDB(): Promise<IDBDatabase> {
@@ -18,8 +20,11 @@ function openIndexedDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(STORE_OFFLINE)) {
+        db.createObjectStore(STORE_OFFLINE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_CUSTOM_UPLOADS)) {
+        db.createObjectStore(STORE_CUSTOM_UPLOADS, { keyPath: 'id' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -79,6 +84,23 @@ export const saveStoredOfflineSongIds = (ids: Set<string>): void => {
   }
 };
 
+export const getStoredCustomSongsMeta = (): Song[] => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.CUSTOM_SONGS_META);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveStoredCustomSongsMeta = (songs: Song[]): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.CUSTOM_SONGS_META, JSON.stringify(songs));
+  } catch (err) {
+    console.error('Failed to save custom songs meta:', err);
+  }
+};
+
 export const getStoredTheme = (defaultTheme: AccentTheme): AccentTheme => {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.ACCENT_THEME);
@@ -96,24 +118,83 @@ export const saveStoredTheme = (theme: AccentTheme): void => {
   }
 };
 
-// IndexedDB Audio Caching for True Offline Playback
+// Custom Uploaded Audio Storage via IndexedDB
+export const saveCustomSongToIndexedDB = async (song: Song, audioBlob: Blob): Promise<boolean> => {
+  try {
+    const db = await openIndexedDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_CUSTOM_UPLOADS, 'readwrite');
+      const store = tx.objectStore(STORE_CUSTOM_UPLOADS);
+      store.put({
+        id: song.id,
+        song,
+        blob: audioBlob,
+        size: audioBlob.size,
+        savedAt: new Date().toISOString(),
+      });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.error('Failed to save custom song to IndexedDB:', err);
+    return false;
+  }
+};
+
+export const getCustomSongBlobUrl = async (songId: string): Promise<string | null> => {
+  try {
+    const db = await openIndexedDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_CUSTOM_UPLOADS, 'readonly');
+      const store = tx.objectStore(STORE_CUSTOM_UPLOADS);
+      const req = store.get(songId);
+      req.onsuccess = () => {
+        if (req.result && req.result.blob) {
+          const url = URL.createObjectURL(req.result.blob);
+          resolve(url);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+};
+
+export const deleteCustomSongFromIndexedDB = async (songId: string): Promise<boolean> => {
+  try {
+    const db = await openIndexedDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_CUSTOM_UPLOADS, 'readwrite');
+      const store = tx.objectStore(STORE_CUSTOM_UPLOADS);
+      store.delete(songId);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.error('Failed to delete custom song from IndexedDB:', err);
+    return false;
+  }
+};
+
+// IndexedDB Audio Caching for Offline Playback
 export const saveAudioBlobOffline = async (song: Song): Promise<boolean> => {
   try {
-    // Fetch the audio as blob
     let blob: Blob;
     try {
       const response = await fetch(song.audioUrl);
       blob = await response.blob();
     } catch {
-      // If direct fetch is blocked by CORS, create simulated audio buffer blob
-      const dummyData = new Uint8Array(1024 * 128); // 128KB cached chunk
+      const dummyData = new Uint8Array(1024 * 128);
       blob = new Blob([dummyData], { type: 'audio/mp3' });
     }
 
     const db = await openIndexedDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
+      const tx = db.transaction(STORE_OFFLINE, 'readwrite');
+      const store = tx.objectStore(STORE_OFFLINE);
       store.put({
         id: song.id,
         song,
@@ -134,8 +215,8 @@ export const removeAudioBlobOffline = async (songId: string): Promise<boolean> =
   try {
     const db = await openIndexedDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
+      const tx = db.transaction(STORE_OFFLINE, 'readwrite');
+      const store = tx.objectStore(STORE_OFFLINE);
       store.delete(songId);
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => reject(tx.error);
@@ -150,8 +231,8 @@ export const getOfflineAudioBlobUrl = async (songId: string): Promise<string | n
   try {
     const db = await openIndexedDB();
     return new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
+      const tx = db.transaction(STORE_OFFLINE, 'readonly');
+      const store = tx.objectStore(STORE_OFFLINE);
       const req = store.get(songId);
       req.onsuccess = () => {
         if (req.result && req.result.blob) {
@@ -172,15 +253,20 @@ export const calculateTotalStorageUsed = async (): Promise<number> => {
   try {
     const db = await openIndexedDB();
     return new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.getAll();
-      req.onsuccess = () => {
-        const items = req.result || [];
-        const total = items.reduce((acc: number, item: { size?: number }) => acc + (item.size || 500000), 0);
-        resolve(total);
+      let total = 0;
+      const tx = db.transaction([STORE_OFFLINE, STORE_CUSTOM_UPLOADS], 'readonly');
+      
+      const req1 = tx.objectStore(STORE_OFFLINE).getAll();
+      const req2 = tx.objectStore(STORE_CUSTOM_UPLOADS).getAll();
+
+      tx.oncomplete = () => {
+        const items1 = req1.result || [];
+        const items2 = req2.result || [];
+        const sum1 = items1.reduce((acc: number, item: { size?: number }) => acc + (item.size || 500000), 0);
+        const sum2 = items2.reduce((acc: number, item: { size?: number }) => acc + (item.size || 2000000), 0);
+        resolve(sum1 + sum2);
       };
-      req.onerror = () => resolve(0);
+      tx.onerror = () => resolve(total);
     });
   } catch {
     return 0;
@@ -191,8 +277,8 @@ export const clearAllOfflineCache = async (): Promise<boolean> => {
   try {
     const db = await openIndexedDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
+      const tx = db.transaction(STORE_OFFLINE, 'readwrite');
+      const store = tx.objectStore(STORE_OFFLINE);
       store.clear();
       tx.oncomplete = () => {
         saveStoredOfflineSongIds(new Set());
@@ -213,12 +299,14 @@ export interface BackupData {
   likedSongIds: string[];
   userPlaylists: Playlist[];
   offlineSongIds: string[];
+  customSongs?: Song[];
 }
 
 export const generateBackupJSON = (
   likedSongIds: Set<string>,
   userPlaylists: Playlist[],
-  offlineSongIds: Set<string>
+  offlineSongIds: Set<string>,
+  customSongs: Song[]
 ): string => {
   const backup: BackupData = {
     version: '2.0',
@@ -226,6 +314,7 @@ export const generateBackupJSON = (
     likedSongIds: Array.from(likedSongIds),
     userPlaylists,
     offlineSongIds: Array.from(offlineSongIds),
+    customSongs,
   };
   return JSON.stringify(backup, null, 2);
 };
