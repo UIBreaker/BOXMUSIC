@@ -13,7 +13,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 const BUCKET_NAME = 'songs';
 const TABLE_NAME = 'songs';
 
-// Interface for DB row
+// Interface for DB row exactly matching Supabase table schema
 export interface DBSongRow {
   id: string;
   title: string;
@@ -22,7 +22,6 @@ export interface DBSongRow {
   cover_url?: string;
   audio_url: string;
   duration?: number;
-  genre?: string;
   created_at?: string;
 }
 
@@ -37,7 +36,7 @@ export const rowToSong = (row: DBSongRow): Song => ({
     'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop',
   duration: row.duration || 210,
   audioUrl: row.audio_url,
-  genre: row.genre || 'V-Pop',
+  genre: 'Nhạc Cá Nhân',
   mood: ['Tất cả', 'Chill & Thư giãn'],
   isLiked: true,
   plays: 1,
@@ -105,7 +104,7 @@ export const uploadSongToCloud = async (
       console.error('Supabase storage upload error:', storageError);
       return {
         song: null,
-        error: `Lỗi cấp quyền Storage: ${storageError.message}. Hãy chạy lệnh SQL phân quyền Storage trên Supabase!`,
+        error: `Lỗi Storage: ${storageError.message}`,
       };
     }
 
@@ -116,7 +115,7 @@ export const uploadSongToCloud = async (
 
     const publicAudioUrl = publicUrlData.publicUrl;
 
-    // 4. Insert row into PostgreSQL database
+    // 4. Insert row into PostgreSQL database (exact schema without genre)
     const dbRow: DBSongRow = {
       id: songId,
       title: meta.title || file.name.replace(/\.[^/.]+$/, ''),
@@ -127,16 +126,15 @@ export const uploadSongToCloud = async (
         'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop',
       audio_url: publicAudioUrl,
       duration: calculatedDuration,
-      genre: 'Nhạc Cá Nhân',
     };
 
     const { error: dbError } = await supabase.from(TABLE_NAME).insert([dbRow]);
 
     if (dbError) {
-      console.warn('Supabase DB insert notice:', dbError.message);
+      console.error('Supabase DB insert error:', dbError.message);
       return {
         song: null,
-        error: `Lỗi bảng Database: ${dbError.message}`,
+        error: `Lỗi Database: ${dbError.message}`,
       };
     }
 
