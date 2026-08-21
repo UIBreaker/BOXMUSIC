@@ -495,28 +495,46 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const toggleLike = (songId: string, event?: React.MouseEvent) => {
+    let origin: { x: number; y: number } | undefined;
+    if (event && event.currentTarget) {
+      try {
+        const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+        if (rect && rect.width > 0 && rect.height > 0) {
+          origin = {
+            x: (rect.left + rect.width / 2) / window.innerWidth,
+            y: (rect.top + rect.height / 2) / window.innerHeight,
+          };
+        }
+      } catch {
+        origin = undefined;
+      }
+    }
+
     setLikedSongIds((prev) => {
       const next = new Set(prev);
+      const isLiking = !next.has(songId);
       if (next.has(songId)) {
         next.delete(songId);
       } else {
         next.add(songId);
-        if (event) {
-          const rect = event.currentTarget.getBoundingClientRect();
-          const x = (rect.left + rect.width / 2) / window.innerWidth;
-          const y = (rect.top + rect.height / 2) / window.innerHeight;
+      }
+      saveStoredLikedSongs(next);
+
+      if (isLiking) {
+        try {
           confetti({
-            particleCount: 30,
-            spread: 65,
-            origin: { x, y },
+            particleCount: 28,
+            spread: 60,
+            origin: origin || { x: 0.5, y: 0.5 },
             colors: [accentTheme.color, '#F43F5E', '#EC4899', '#FFF'],
-            ticks: 120,
+            ticks: 100,
             gravity: 1.2,
             scalar: 0.85,
           });
+        } catch {
+          // ignore confetti error
         }
       }
-      saveStoredLikedSongs(next);
       return next;
     });
   };
