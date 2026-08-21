@@ -8,6 +8,7 @@ import {
   Loader2,
   FileAudio,
   Image as ImageIcon,
+  Cloud,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -31,7 +32,7 @@ export const UploadSongModal: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
-  const [album, setAlbum] = useState('Nhạc Tải Lên Cá Nhân');
+  const [album, setAlbum] = useState('Nhạc Tải Lên Đám Mây');
   const [coverUrl, setCoverUrl] = useState(PRESET_COVERS[0]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
@@ -48,7 +49,7 @@ export const UploadSongModal: React.FC = () => {
       setTitle(parts.slice(1).join(' - ').trim());
     } else {
       setTitle(cleanName);
-      setArtist('Bạn (Tải lên)');
+      setArtist('Bạn');
     }
   };
 
@@ -81,7 +82,9 @@ export const UploadSongModal: React.FC = () => {
         setSelectedFile(null);
         setTitle('');
         setArtist('');
-        playSong(createdSong);
+        if (createdSong) {
+          playSong(createdSong);
+        }
       }, 1200);
     } catch (err) {
       console.error(err);
@@ -115,14 +118,14 @@ export const UploadSongModal: React.FC = () => {
                 className="w-9 h-9 rounded-xl flex items-center justify-center text-black font-bold shadow-md"
                 style={{ backgroundColor: accentTheme.color }}
               >
-                <UploadCloud className="w-5 h-5 fill-black text-black" />
+                <Cloud className="w-5 h-5 fill-black text-black" />
               </div>
               <div>
                 <h3 className="text-base font-extrabold text-white">
-                  Tải Nhạc Lên BOXMUSIC
+                  Tải Nhạc Lên Cloud Database
                 </h3>
                 <p className="text-xs text-zinc-400">
-                  Hỗ trợ MP3, MP4, M4A, WAV, FLAC lưu trữ ngoại tuyến
+                  Lưu trữ đám mây Supabase • Đồng bộ ngay với Điện thoại
                 </p>
               </div>
             </div>
@@ -165,7 +168,7 @@ export const UploadSongModal: React.FC = () => {
                     Kéo thả hoặc Bấm để chọn file nhạc
                   </p>
                   <p className="text-xs text-zinc-400 mt-1">
-                    MP3, MP4, M4A, FLAC, WAV (Không giới hạn dung lượng)
+                    MP3, MP4, M4A, FLAC, WAV (Lưu vào Cloud Supabase)
                   </p>
                 </div>
               </div>
@@ -179,7 +182,7 @@ export const UploadSongModal: React.FC = () => {
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold text-white truncate">{selectedFile.name}</p>
                     <p className="text-[10px] text-zinc-400 mt-0.5">
-                      {formatFileSize(selectedFile.size)} • Sẵn sàng tải lên
+                      {formatFileSize(selectedFile.size)} • Sẵn sàng tải lên Cloud
                     </p>
                   </div>
                 </div>
@@ -276,7 +279,7 @@ export const UploadSongModal: React.FC = () => {
             {uploadSuccess && (
               <div className="p-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Đã thêm bài hát vào thư viện & tự động phát nhạc!</span>
+                <span>Đã tải lên Cloud Database thành công & đồng bộ tới mọi thiết bị!</span>
               </div>
             )}
 
@@ -294,12 +297,12 @@ export const UploadSongModal: React.FC = () => {
                 {isUploading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Đang lưu vào bộ nhớ IndexedDB...</span>
+                    <span>Đang tải lên Supabase Cloud Storage...</span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    <span>Thêm Vào Thư Viện & Phát Ngay</span>
+                    <span>Tải Lên Cloud & Đồng Bộ Mọi Thiết Bị</span>
                   </>
                 )}
               </button>

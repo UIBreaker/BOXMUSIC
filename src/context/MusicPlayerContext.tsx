@@ -34,6 +34,12 @@ import {
   generateBackupJSON,
   parseBackupJSON,
 } from '../services/storageService';
+import {
+  fetchCloudSongs,
+  uploadSongToCloud,
+  deleteSongFromCloud,
+  subscribeToSongUpdates,
+} from '../services/supabase';
 import confetti from 'canvas-confetti';
 
 interface MusicContextType {
@@ -63,6 +69,7 @@ interface MusicContextType {
   isSyncModalOpen: boolean;
   isUploadModalOpen: boolean;
   downloadingSongIds: Set<string>;
+  isCloudLoading: boolean;
 
   // Desktop Pro States
   desktopRightPanelTab: DesktopRightPanelTab;
@@ -121,6 +128,7 @@ const MusicContext = createContext<MusicContextType | undefined>(undefined);
 export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Custom songs list
   const [customSongs, setCustomSongs] = useState<Song[]>(() => getStoredCustomSongsMeta());
+  const [isCloudLoading, setIsCloudLoading] = useState<boolean>(false);
 
   const [currentSong, setCurrentSong] = useState<Song | null>(() => {
     const stored = getStoredCustomSongsMeta();
@@ -180,6 +188,43 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   // All songs combined
   const allSongs = [...customSongs, ...MOCK_SONGS];
+
+  // Refresh songs from Supabase Cloud on mount & Realtime
+  const loadCloudSongs = async () => {
+    setIsCloudLoading(true);
+    const cloudSongs = await fetchCloudSongs();
+    if (cloudSongs.length > 0) {
+      setCustomSongs((prev) => {
+        // Merge cloud songs with existing local songs avoiding duplicates
+        const map = new Map<string, Song>();
+        cloudSongs.forEach((s) => map.set(s.id, s));
+        prev.forEach((s) => {
+          if (!map.has(s.id)) map.set(s.id, s);
+        });
+        const merged = Array.from(map.values());
+        saveStoredCustomSongsMeta(merged);
+        return merged;
+      });
+
+      // If currentSong is null, select the first cloud song
+      setCurrentSong((prev) => prev || cloudSongs[0]);
+      setDuration((prev) => prev || cloudSongs[0].duration);
+    }
+    setIsCloudLoading(false);
+  };
+
+  useEffect(() => {
+    loadCloudSongs();
+
+    // Subscribe to realtime updates from other devices
+    const unsubscribe = subscribeToSongUpdates(() => {
+      loadCloudSongs();
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   // Refresh storage calculation
   const refreshStorageSize = async () => {
@@ -286,11 +331,16 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
     setHistory((prev) => [song, ...prev.filter((s) => s.id !== song.id)].slice(0, 20));
 
     if (audioRef.current) {
-      let playUrl: string | null = null;
-      if (song.isCustomUpload) {
+      // 1. If song is cached in IndexedDB, use local blob URL
+      let playUrl: string | null = await getOfflineAudioBlobUrl(song.id);
+      
+      if (!playUrl && song.isCustomUpload) {
         playUrl = await getCustomSongBlobUrl(song.id);
-      } else {
-        playUrl = await getOfflineAudioBlobUrl(song.id);
+      }
+
+      // 2. Otherwise use public Supabase Cloud streaming URL
+      if (!playUrl && song.audioUrl) {
+        playUrl = song.audioUrl;
       }
 
       audioRef.current.src = playUrl || song.audioUrl;
@@ -491,71 +541,69 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
     setTurntableMode((prev) => !prev);
   };
 
-  // Upload Custom Song from user file (MP3 / MP4)
+  // Upload Custom Song to Supabase Cloud Storage + IndexedDB local backup
   const uploadCustomSong = async (
     file: File,
     meta: { title: string; artist: string; album?: string; coverUrl?: string }
   ): Promise<Song> => {
-    const songId = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    
-    // Estimate or calculate duration
-    const tempAudio = new Audio(URL.createObjectURL(file));
-    let calculatedDuration = 210;
-    await new Promise<void>((res) => {
-      tempAudio.onloadedmetadata = () => {
-        if (tempAudio.duration && !isNaN(tempAudio.duration)) {
-          calculatedDuration = Math.floor(tempAudio.duration);
-        }
-        res();
+    // 1. Try uploading to Supabase Cloud
+    let createdSong = await uploadSongToCloud(file, meta);
+
+    // 2. If offline or error, create fallback local Song object
+    if (!createdSong) {
+      const songId = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      createdSong = {
+        id: songId,
+        title: meta.title || file.name.replace(/\.[^/.]+$/, ''),
+        artist: meta.artist || 'Bạn (Tải lên)',
+        album: meta.album || 'Nhạc Tải Lên Cá Nhân',
+        coverUrl:
+          meta.coverUrl ||
+          'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop',
+        duration: 210,
+        audioUrl: '',
+        genre: 'Nhạc Cá Nhân',
+        mood: ['Tất cả', 'Chill & Thư giãn'],
+        isLiked: true,
+        plays: 1,
+        releaseYear: new Date().getFullYear(),
+        accentColor: accentTheme.color,
+        isCustomUpload: true,
+        fileSize: file.size,
+        uploadedAt: new Date().toISOString(),
       };
-      setTimeout(res, 800);
-    });
+    }
 
-    const newSong: Song = {
-      id: songId,
-      title: meta.title || file.name.replace(/\.[^/.]+$/, ''),
-      artist: meta.artist || 'Bạn (Tải lên)',
-      album: meta.album || 'Nhạc Tải Lên Cá Nhân',
-      coverUrl:
-        meta.coverUrl ||
-        'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop',
-      duration: calculatedDuration,
-      audioUrl: '', // blob will be retrieved from IndexedDB
-      genre: 'Nhạc Cá Nhân',
-      mood: ['Tất cả', 'Chill & Thư giãn'],
-      isLiked: true,
-      plays: 1,
-      releaseYear: new Date().getFullYear(),
-      accentColor: accentTheme.color,
-      isCustomUpload: true,
-      fileSize: file.size,
-      uploadedAt: new Date().toISOString(),
-    };
+    // Save audio blob to IndexedDB so it's always fast and offline-ready on this device
+    await saveCustomSongToIndexedDB(createdSong, file);
 
-    // Save to IndexedDB
-    await saveCustomSongToIndexedDB(newSong, file);
-
-    // Save meta to state & localStorage
+    // Update state & LocalStorage
     setCustomSongs((prev) => {
-      const updated = [newSong, ...prev];
+      const updated = [createdSong!, ...prev.filter((s) => s.id !== createdSong!.id)];
       saveStoredCustomSongsMeta(updated);
       return updated;
     });
 
     // Auto-like newly uploaded song
     setLikedSongIds((prev) => {
-      const next = new Set(prev).add(newSong.id);
+      const next = new Set(prev).add(createdSong!.id);
       saveStoredLikedSongs(next);
       return next;
     });
 
     refreshStorageSize();
-    return newSong;
+    return createdSong;
   };
 
-  // Delete Song (Custom upload or clean up)
+  // Delete Song (Supabase Cloud + IndexedDB local)
   const deleteSong = async (songId: string): Promise<void> => {
-    // If it's a custom uploaded song, remove from IndexedDB & customSongs state
+    const songToDelete = customSongs.find((s) => s.id === songId);
+    if (songToDelete) {
+      // Delete from Supabase Cloud
+      await deleteSongFromCloud(songToDelete);
+    }
+
+    // Remove from IndexedDB & customSongs state
     await deleteCustomSongFromIndexedDB(songId);
     setCustomSongs((prev) => {
       const updated = prev.filter((s) => s.id !== songId);
@@ -718,6 +766,7 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
         isSyncModalOpen,
         isUploadModalOpen,
         downloadingSongIds,
+        isCloudLoading,
         desktopRightPanelTab,
         isDesktopRightPanelOpen,
         audioQuality,
