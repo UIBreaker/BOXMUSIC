@@ -141,7 +141,7 @@ export const saveCustomSongToIndexedDB = async (song: Song, audioBlob: Blob): Pr
   }
 };
 
-export const getCustomSongBlobUrl = async (songId: string): Promise<string | null> => {
+export const getCustomSongBlob = async (songId: string): Promise<Blob | null> => {
   try {
     const db = await openIndexedDB();
     return new Promise((resolve) => {
@@ -150,14 +150,25 @@ export const getCustomSongBlobUrl = async (songId: string): Promise<string | nul
       const req = store.get(songId);
       req.onsuccess = () => {
         if (req.result && req.result.blob) {
-          const url = URL.createObjectURL(req.result.blob);
-          resolve(url);
+          resolve(req.result.blob);
         } else {
           resolve(null);
         }
       };
       req.onerror = () => resolve(null);
     });
+  } catch {
+    return null;
+  }
+};
+
+export const getCustomSongBlobUrl = async (songId: string): Promise<string | null> => {
+  try {
+    const blob = await getCustomSongBlob(songId);
+    if (blob) {
+      return URL.createObjectURL(blob);
+    }
+    return null;
   } catch {
     return null;
   }

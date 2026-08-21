@@ -24,6 +24,7 @@ import {
   getStoredTheme,
   saveStoredTheme,
   saveCustomSongToIndexedDB,
+  getCustomSongBlob,
   getCustomSongBlobUrl,
   deleteCustomSongFromIndexedDB,
   saveAudioBlobOffline,
@@ -189,6 +190,38 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   // All songs combined
   const allSongs = [...customSongs, ...MOCK_SONGS];
 
+  // Auto sync any local songs to Cloud if they were saved locally before Cloud was active
+  const syncLocalSongsToCloud = async () => {
+    const localList = getStoredCustomSongsMeta();
+    for (const song of localList) {
+      if (!song.audioUrl || !song.audioUrl.startsWith('http')) {
+        try {
+          const blob = await getCustomSongBlob(song.id);
+          if (blob) {
+            const file = new File([blob], `${song.title || 'song'}.mp3`, {
+              type: blob.type || 'audio/mpeg',
+            });
+            const res = await uploadSongToCloud(file, {
+              title: song.title,
+              artist: song.artist,
+              album: song.album,
+              coverUrl: song.coverUrl,
+            });
+            if (res.song) {
+              setCustomSongs((prev) => {
+                const updated = prev.map((s) => (s.id === song.id ? res.song! : s));
+                saveStoredCustomSongsMeta(updated);
+                return updated;
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('Auto sync song failed:', err);
+        }
+      }
+    }
+  };
+
   // Refresh songs from Supabase Cloud on mount & Realtime
   const loadCloudSongs = async () => {
     setIsCloudLoading(true);
@@ -214,7 +247,9 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   useEffect(() => {
-    loadCloudSongs();
+    loadCloudSongs().then(() => {
+      syncLocalSongsToCloud();
+    });
 
     // Subscribe to realtime updates from other devices
     const unsubscribe = subscribeToSongUpdates(() => {
