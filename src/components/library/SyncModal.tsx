@@ -10,7 +10,21 @@ import {
   Share2,
   Smartphone,
   FileCheck,
+  Copy,
+  Check,
+  Loader2,
+  ArrowRight,
+  Sparkles,
+  Link as LinkIcon,
 } from 'lucide-react';
+import {
+  encodeSyncToken,
+  decodeSyncToken,
+  uploadCloudSync,
+  fetchCloudSync,
+} from '../../services/storageService';
+import type { BackupData } from '../../services/storageService';
+import confetti from 'canvas-confetti';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const SyncModal: React.FC = () => {
@@ -20,6 +34,7 @@ export const SyncModal: React.FC = () => {
     likedSongIds,
     userPlaylists,
     offlineSongIds,
+    customSongs,
     storageUsedBytes,
     exportLibraryBackup,
     importLibraryBackup,
@@ -27,11 +42,15 @@ export const SyncModal: React.FC = () => {
     accentTheme,
   } = useMusic();
 
-  const [activeTab, setActiveTab] = useState<'backup' | 'device' | 'storage'>('backup');
-  const [importStatus, setImportStatus] = useState<string | null>(null);
-  const [syncCode] = useState<string>(() =>
-    Math.floor(100000 + Math.random() * 900000).toString()
-  );
+  const [activeTab, setActiveTab] = useState<'backup' | 'device' | 'storage'>('device');
+  const [inputCode, setInputCode] = useState('');
+  const [generatedPin, setGeneratedPin] = useState<string | null>(null);
+  const [syncToken, setSyncToken] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [hasCopiedPin, setHasCopiedPin] = useState(false);
+  const [hasCopiedLink, setHasCopiedLink] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!isSyncModalOpen) return null;
@@ -40,6 +59,89 @@ export const SyncModal: React.FC = () => {
     if (bytes === 0) return '0 MB';
     const mb = bytes / (1024 * 1024);
     return `${mb.toFixed(1)} MB`;
+  };
+
+  const handleGenerateSyncCode = async () => {
+    setIsGenerating(true);
+    const backup: BackupData = {
+      version: '2.0',
+      exportedAt: new Date().toISOString(),
+      likedSongIds: Array.from(likedSongIds),
+      userPlaylists,
+      offlineSongIds: Array.from(offlineSongIds),
+      customSongs,
+    };
+
+    // Generate local token
+    const token = encodeSyncToken(backup);
+    setSyncToken(token);
+
+    // Try cloud sync PIN
+    const cloudId = await uploadCloudSync(backup);
+    if (cloudId) {
+      setGeneratedPin(cloudId);
+    } else {
+      // Fallback to token PIN
+      setGeneratedPin(token.slice(0, 16));
+    }
+    setIsGenerating(false);
+  };
+
+  const handleConnectAndSync = async () => {
+    const raw = inputCode.trim();
+    if (!raw) return;
+
+    setIsSyncing(true);
+    setSyncStatus(null);
+
+    // 1. Try decoding as direct Token / Base64
+    let parsed = decodeSyncToken(raw);
+
+    // 2. If not base64 token, try fetching from Cloud Sync PIN
+    if (!parsed) {
+      parsed = await fetchCloudSync(raw);
+    }
+
+    setIsSyncing(false);
+
+    if (parsed) {
+      const success = importLibraryBackup(JSON.stringify(parsed));
+      if (success) {
+        setSyncStatus({
+          type: 'success',
+          message: 'Đồng bộ thư viện thành công! Dữ liệu đã được nạp vào máy.',
+        });
+        confetti({
+          particleCount: 50,
+          spread: 70,
+          origin: { y: 0.6 },
+        });
+      } else {
+        setSyncStatus({ type: 'error', message: 'Dữ liệu đồng bộ bị lỗi cấu trúc!' });
+      }
+    } else {
+      setSyncStatus({
+        type: 'error',
+        message: 'Mã không tồn tại hoặc đã hết hạn. Hãy kiểm tra lại mã đã nhập!',
+      });
+    }
+  };
+
+  const handleCopyPin = () => {
+    const codeToCopy = generatedPin || syncToken;
+    if (!codeToCopy) return;
+    navigator.clipboard.writeText(codeToCopy);
+    setHasCopiedPin(true);
+    setTimeout(() => setHasCopiedPin(false), 2000);
+  };
+
+  const handleCopyShareLink = () => {
+    const code = generatedPin || syncToken;
+    if (!code) return;
+    const url = `${window.location.origin}${window.location.pathname}?sync=${encodeURIComponent(code)}`;
+    navigator.clipboard.writeText(url);
+    setHasCopiedLink(true);
+    setTimeout(() => setHasCopiedLink(false), 2000);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,16 +154,20 @@ export const SyncModal: React.FC = () => {
       if (content) {
         const success = importLibraryBackup(content);
         if (success) {
-          setImportStatus('Khôi phục thư viện thành công!');
-          setTimeout(() => setImportStatus(null), 3000);
+          setSyncStatus({ type: 'success', message: 'Khôi phục thư viện từ file thành công!' });
         } else {
-          setImportStatus('File sao lưu không hợp lệ!');
-          setTimeout(() => setImportStatus(null), 3000);
+          setSyncStatus({ type: 'error', message: 'File sao lưu không hợp lệ!' });
         }
       }
     };
     reader.readAsText(file);
   };
+
+  const qrUrl = syncToken
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+        `${window.location.origin}${window.location.pathname}?sync=${generatedPin || syncToken}`
+      )}`
+    : null;
 
   return (
     <AnimatePresence>
@@ -91,7 +197,7 @@ export const SyncModal: React.FC = () => {
                   Lưu Trữ & Đồng Bộ Thư Viện
                 </h3>
                 <p className="text-xs text-zinc-400">
-                  Nghe nhạc trên mọi thiết bị và khi không có mạng
+                  Chuyển nhạc giữa Máy tính & Điện thoại qua mã PIN
                 </p>
               </div>
             </div>
@@ -107,18 +213,6 @@ export const SyncModal: React.FC = () => {
           {/* Nav Tabs */}
           <div className="flex items-center gap-2 pt-3 pb-2">
             <button
-              onClick={() => setActiveTab('backup')}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                activeTab === 'backup'
-                  ? 'bg-white/20 text-white shadow-sm'
-                  : 'glass-card text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <Download className="w-3.5 h-3.5" />
-              Sao Lưu & Khôi Phục
-            </button>
-
-            <button
               onClick={() => setActiveTab('device')}
               className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                 activeTab === 'device'
@@ -127,7 +221,19 @@ export const SyncModal: React.FC = () => {
               }`}
             >
               <Smartphone className="w-3.5 h-3.5" />
-              Đồng Bộ Thiết Bị
+              Đồng Bộ Mã PIN
+            </button>
+
+            <button
+              onClick={() => setActiveTab('backup')}
+              className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                activeTab === 'backup'
+                  ? 'bg-white/20 text-white shadow-sm'
+                  : 'glass-card text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Download className="w-3.5 h-3.5" />
+              Xuất / Nhập File
             </button>
 
             <button
@@ -139,12 +245,138 @@ export const SyncModal: React.FC = () => {
               }`}
             >
               <HardDrive className="w-3.5 h-3.5" />
-              Bộ Nhớ Offline
+              Bộ Nhớ
             </button>
           </div>
 
           {/* Content Area */}
           <div className="flex-1 overflow-y-auto py-3 space-y-4 no-scrollbar">
+            {/* DEVICE SYNC TAB */}
+            {activeTab === 'device' && (
+              <div className="space-y-4">
+                {/* 1. INPUT RECEIVE SYNC CODE SECTION */}
+                <div className="p-4 rounded-2xl glass-card border border-white/10 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold flex items-center justify-center">
+                      1
+                    </span>
+                    <h4 className="text-xs font-bold text-white">
+                      Nhập mã từ máy khác để nạp thư viện vào đây:
+                    </h4>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={inputCode}
+                      onChange={(e) => setInputCode(e.target.value)}
+                      placeholder="Dán mã đồng bộ hoặc mã PIN vào đây..."
+                      className="flex-1 px-3.5 py-2.5 rounded-xl glass-card text-xs text-white placeholder-zinc-500 border border-white/10 focus:border-emerald-400 focus:outline-none font-mono"
+                    />
+                    <button
+                      onClick={handleConnectAndSync}
+                      disabled={isSyncing || !inputCode.trim()}
+                      className="px-4 py-2.5 rounded-xl font-bold text-xs text-black flex items-center gap-1.5 shadow-lg transition-transform active:scale-95 cursor-pointer disabled:opacity-50"
+                      style={{ backgroundColor: accentTheme.color }}
+                    >
+                      {isSyncing ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-black" />
+                      ) : (
+                        <ArrowRight className="w-4 h-4" />
+                      )}
+                      <span>Đồng Bộ Ngay</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Status Feedback Toast */}
+                {syncStatus && (
+                  <div
+                    className={`p-3 rounded-2xl text-xs font-bold flex items-center gap-2 ${
+                      syncStatus.type === 'success'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                    }`}
+                  >
+                    <FileCheck className="w-4 h-4 flex-shrink-0" />
+                    <span>{syncStatus.message}</span>
+                  </div>
+                )}
+
+                {/* 2. GENERATE SYNC CODE SECTION */}
+                <div className="p-4 rounded-2xl glass-card border border-white/10 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 text-xs font-bold flex items-center justify-center">
+                        2
+                      </span>
+                      <h4 className="text-xs font-bold text-white">
+                        Lấy mã từ máy này để gửi sang máy khác:
+                      </h4>
+                    </div>
+
+                    {!generatedPin && (
+                      <button
+                        onClick={handleGenerateSyncCode}
+                        disabled={isGenerating}
+                        className="px-3 py-1.5 rounded-xl glass-panel text-xs font-bold text-white border border-white/20 hover:border-emerald-400 transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {isGenerating ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                        )}
+                        <span>Tạo Mã Mới</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {generatedPin && (
+                    <div className="space-y-3 pt-1">
+                      <div className="p-3 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] text-zinc-400 font-semibold uppercase">Mã Đồng Bộ Của Bạn</p>
+                          <p className="text-xs font-mono font-bold text-emerald-400 mt-0.5 truncate max-w-[200px]">
+                            {generatedPin}
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleCopyPin}
+                          className="px-3 py-1.5 rounded-lg glass-card hover:bg-white/10 text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
+                        >
+                          {hasCopiedPin ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{hasCopiedPin ? 'Đã chép' : 'Sao chép'}</span>
+                        </button>
+                      </div>
+
+                      {/* Quick Share Link Button */}
+                      <button
+                        onClick={handleCopyShareLink}
+                        className="w-full py-2 rounded-xl glass-card text-xs font-bold text-zinc-300 hover:text-white border border-white/10 flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                      >
+                        <LinkIcon className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>{hasCopiedLink ? 'Đã sao chép link 1-chạm!' : 'Sao chép Link Đồng Bộ 1-chạm'}</span>
+                      </button>
+
+                      {/* QR Code */}
+                      {qrUrl && (
+                        <div className="text-center pt-2 flex flex-col items-center">
+                          <div className="p-2 bg-white rounded-2xl shadow-lg w-28 h-28 flex items-center justify-center">
+                            <img src={qrUrl} alt="QR Sync" className="w-full h-full object-contain" />
+                          </div>
+                          <p className="text-[10px] text-zinc-400 mt-1.5 flex items-center gap-1">
+                            <QrCode className="w-3 h-3 text-emerald-400" />
+                            Quét camera điện thoại để đồng bộ ngay
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* BACKUP TAB */}
             {activeTab === 'backup' && (
               <div className="space-y-4">
                 {/* Stats overview */}
@@ -158,8 +390,8 @@ export const SyncModal: React.FC = () => {
                     <p className="text-[10px] text-zinc-400 font-semibold uppercase">Playlists</p>
                   </div>
                   <div>
-                    <p className="text-base font-black text-cyan-400">{offlineSongIds.size}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold uppercase">Offline</p>
+                    <p className="text-base font-black text-cyan-400">{customSongs.length}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold uppercase">Tải lên</p>
                   </div>
                 </div>
 
@@ -206,38 +438,10 @@ export const SyncModal: React.FC = () => {
                     </button>
                   </div>
                 </div>
-
-                {/* Import status toast */}
-                {importStatus && (
-                  <div className="p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-2">
-                    <FileCheck className="w-4 h-4" />
-                    <span>{importStatus}</span>
-                  </div>
-                )}
               </div>
             )}
 
-            {activeTab === 'device' && (
-              <div className="space-y-4 text-center">
-                <div className="p-5 rounded-2xl glass-card border border-white/10 flex flex-col items-center justify-center space-y-3">
-                  <div className="w-28 h-28 rounded-2xl bg-white p-2 flex items-center justify-center shadow-lg">
-                    <QrCode className="w-full h-full text-black" />
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-bold text-white">Mã kết nối nhanh đa thiết bị</p>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      Nhập mã này trên điện thoại/máy tính khác để đồng bộ:
-                    </p>
-                  </div>
-
-                  <div className="px-6 py-2 rounded-xl bg-white/10 border border-white/20 text-xl font-mono font-black tracking-widest text-emerald-400">
-                    {syncCode}
-                  </div>
-                </div>
-              </div>
-            )}
-
+            {/* STORAGE TAB */}
             {activeTab === 'storage' && (
               <div className="space-y-4">
                 <div className="p-4 rounded-2xl glass-card border border-white/10 space-y-3">
@@ -251,7 +455,6 @@ export const SyncModal: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* Progress bar */}
                   <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
                     <div
                       className="h-full bg-emerald-400 rounded-full transition-all"

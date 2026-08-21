@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { MusicPlayerProvider, useMusic } from './context/MusicPlayerContext';
 import { DesktopSidebar } from './components/layout/DesktopSidebar';
 import { DesktopRightPanel } from './components/layout/DesktopRightPanel';
@@ -15,6 +15,9 @@ import { PlaylistDetailModal } from './components/library/PlaylistDetailModal';
 import { CreatePlaylistModal } from './components/library/CreatePlaylistModal';
 import { UploadSongModal } from './components/library/UploadSongModal';
 import { SyncModal } from './components/library/SyncModal';
+import { decodeSyncToken, fetchCloudSync } from './services/storageService';
+import confetti from 'canvas-confetti';
+import { CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const MainAppLayout: React.FC = () => {
@@ -26,8 +29,36 @@ const MainAppLayout: React.FC = () => {
     setSelectedPlaylist,
     isCreatePlaylistOpen,
     setIsCreatePlaylistOpen,
+    importLibraryBackup,
     accentTheme,
   } = useMusic();
+
+  const [autoSyncToast, setAutoSyncToast] = useState<string | null>(null);
+
+  // Auto-detect ?sync= parameter on page load
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const syncParam = params.get('sync');
+    if (syncParam) {
+      const processSync = async () => {
+        let parsed = decodeSyncToken(syncParam);
+        if (!parsed) {
+          parsed = await fetchCloudSync(syncParam);
+        }
+        if (parsed) {
+          const success = importLibraryBackup(JSON.stringify(parsed));
+          if (success) {
+            setAutoSyncToast('Đã tự động đồng bộ thư viện nhạc thành công!');
+            confetti({ particleCount: 60, spread: 80, origin: { y: 0.5 } });
+            setTimeout(() => setAutoSyncToast(null), 4000);
+            // Clean URL param
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        }
+      };
+      processSync();
+    }
+  }, [importLibraryBackup]);
 
   return (
     <div className="min-h-screen h-screen w-screen bg-[#050608] text-zinc-100 flex flex-col overflow-hidden select-none font-sans relative">
@@ -142,6 +173,21 @@ const MainAppLayout: React.FC = () => {
         isOpen={isCreatePlaylistOpen}
         onClose={() => setIsCreatePlaylistOpen(false)}
       />
+
+      {/* Auto Sync Success Toast */}
+      <AnimatePresence>
+        {autoSyncToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 30, scale: 0.9 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl glass-panel border border-emerald-500/40 text-emerald-300 text-xs font-bold shadow-2xl flex items-center gap-2.5"
+          >
+            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+            <span>{autoSyncToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

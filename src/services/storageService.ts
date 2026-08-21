@@ -330,3 +330,63 @@ export const parseBackupJSON = (jsonString: string): BackupData | null => {
     return null;
   }
 };
+
+// Compact Sync Token Generation (Base64 URL Safe)
+export const encodeSyncToken = (backup: BackupData): string => {
+  try {
+    const json = JSON.stringify(backup);
+    const base64 = btoa(unescape(encodeURIComponent(json)));
+    return `BM_${base64}`;
+  } catch {
+    return '';
+  }
+};
+
+export const decodeSyncToken = (token: string): BackupData | null => {
+  try {
+    const cleanToken = token.startsWith('BM_') ? token.slice(3) : token;
+    const json = decodeURIComponent(escape(atob(cleanToken)));
+    return parseBackupJSON(json);
+  } catch {
+    return null;
+  }
+};
+
+// Cloud PIN Sync Relay (Free JSONBlob API)
+export const uploadCloudSync = async (backup: BackupData): Promise<string | null> => {
+  try {
+    const response = await fetch('https://jsonblob.com/api/jsonBlob', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(backup),
+    });
+    if (response.ok) {
+      const location = response.headers.get('Location');
+      if (location) {
+        const id = location.split('/').pop() || '';
+        return id;
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error('Cloud sync upload failed:', err);
+    return null;
+  }
+};
+
+export const fetchCloudSync = async (blobId: string): Promise<BackupData | null> => {
+  try {
+    const cleanId = blobId.trim().replace(/^.*blob\//, '').replace(/^.*jsonBlob\//, '');
+    const response = await fetch(`https://jsonblob.com/api/jsonBlob/${cleanId}`, {
+      headers: { 'Accept': 'application/json' },
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return parseBackupJSON(JSON.stringify(data));
+    }
+    return null;
+  } catch (err) {
+    console.error('Cloud sync fetch failed:', err);
+    return null;
+  }
+};
