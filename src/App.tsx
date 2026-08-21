@@ -13,6 +13,8 @@ import { LibraryView } from './components/library/LibraryView';
 import { ArtistModal } from './components/common/ArtistModal';
 import { PlaylistDetailModal } from './components/library/PlaylistDetailModal';
 import { CreatePlaylistModal } from './components/library/CreatePlaylistModal';
+import { UploadSongModal } from './components/library/UploadSongModal';
+import { SyncModal } from './components/library/SyncModal';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const MainAppLayout: React.FC = () => {
@@ -121,7 +123,11 @@ const MainAppLayout: React.FC = () => {
       {/* Full Screen Player Modal (Universal for mobile swipe up or desktop expand) */}
       <FullPlayer />
 
-      {/* Shared Modals */}
+      {/* Shared Modals - Available Globally Across All Tabs */}
+      <UploadSongModal />
+
+      <SyncModal />
+
       <ArtistModal
         artist={selectedArtist}
         onClose={() => setSelectedArtist(null)}

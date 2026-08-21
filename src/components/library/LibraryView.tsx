@@ -3,10 +3,6 @@ import { useMusic } from '../../context/MusicPlayerContext';
 import type { Playlist, Song } from '../../types/music';
 import { SongListItem } from '../common/SongListItem';
 import { SongCard } from '../common/SongCard';
-import { CreatePlaylistModal } from './CreatePlaylistModal';
-import { PlaylistDetailModal } from './PlaylistDetailModal';
-import { SyncModal } from './SyncModal';
-import { UploadSongModal } from './UploadSongModal';
 import {
   Heart,
   Plus,
@@ -36,9 +32,7 @@ export const LibraryView: React.FC = () => {
     storageUsedBytes,
     playSong,
     accentTheme,
-    selectedPlaylist,
     setSelectedPlaylist,
-    isCreatePlaylistOpen,
     setIsCreatePlaylistOpen,
     setIsSyncModalOpen,
     setIsUploadModalOpen,
@@ -408,24 +402,6 @@ export const LibraryView: React.FC = () => {
           )}
         </div>
       )}
-
-      {/* Upload Song Modal */}
-      <UploadSongModal />
-
-      {/* Sync & Multi-device Modal */}
-      <SyncModal />
-
-      {/* Create Playlist Modal */}
-      <CreatePlaylistModal
-        isOpen={isCreatePlaylistOpen}
-        onClose={() => setIsCreatePlaylistOpen(false)}
-      />
-
-      {/* Playlist Detail Modal */}
-      <PlaylistDetailModal
-        playlist={selectedPlaylist}
-        onClose={() => setSelectedPlaylist(null)}
-      />
     </div>
   );
 };
