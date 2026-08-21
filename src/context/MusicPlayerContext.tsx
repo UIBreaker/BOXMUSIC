@@ -119,10 +119,19 @@ interface MusicContextType {
 const MusicContext = createContext<MusicContextType | undefined>(undefined);
 
 export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [currentSong, setCurrentSong] = useState<Song | null>(MOCK_SONGS[0]);
+  // Custom songs list
+  const [customSongs, setCustomSongs] = useState<Song[]>(() => getStoredCustomSongsMeta());
+
+  const [currentSong, setCurrentSong] = useState<Song | null>(() => {
+    const stored = getStoredCustomSongsMeta();
+    return stored.length > 0 ? stored[0] : null;
+  });
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
-  const [duration, setDuration] = useState<number>(MOCK_SONGS[0].duration);
+  const [duration, setDuration] = useState<number>(() => {
+    const stored = getStoredCustomSongsMeta();
+    return stored.length > 0 ? stored[0].duration : 0;
+  });
   const [volume, setVolumeState] = useState<number>(0.85);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isShuffle, setIsShuffle] = useState<boolean>(false);
@@ -131,17 +140,17 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [playerSubTab, setPlayerSubTab] = useState<PlayerSubTab>('player');
   const [mainTab, setMainTab] = useState<MainTab>('home');
   
-  // Custom songs list
-  const [customSongs, setCustomSongs] = useState<Song[]>(() => getStoredCustomSongsMeta());
-
   // Load persistent states
   const [accentTheme, setAccentThemeState] = useState<AccentTheme>(() =>
     getStoredTheme(ACCENT_THEMES[0])
   );
-  const [queue, setQueue] = useState<Song[]>(MOCK_SONGS.slice(1));
+  const [queue, setQueue] = useState<Song[]>(() => {
+    const stored = getStoredCustomSongsMeta();
+    return stored.length > 1 ? stored.slice(1) : [];
+  });
   const [history, setHistory] = useState<Song[]>([]);
   const [likedSongIds, setLikedSongIds] = useState<Set<string>>(() =>
-    getStoredLikedSongs(MOCK_SONGS.filter((s) => s.isLiked).map((s) => s.id))
+    getStoredLikedSongs([])
   );
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>(() =>
     getStoredPlaylists(MOCK_PLAYLISTS)

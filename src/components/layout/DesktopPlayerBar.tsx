@@ -19,6 +19,8 @@ import {
   ArrowDownToLine,
   CheckCircle2,
   Loader2,
+  UploadCloud,
+  Music,
 } from 'lucide-react';
 import { useMusic } from '../../context/MusicPlayerContext';
 import type { AudioQuality } from '../../types/music';
@@ -55,16 +57,40 @@ export const DesktopPlayerBar: React.FC = () => {
     setIsDesktopRightPanelOpen,
     setAudioQuality,
     setIsFullScreen,
+    setIsUploadModalOpen,
   } = useMusic();
 
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [showSleepModal, setShowSleepModal] = useState(false);
   const [sleepTimerMinutes, setSleepTimerMinutes] = useState<number | null>(null);
 
-  if (!currentSong) return null;
+  if (!currentSong) {
+    return (
+      <footer className="h-22 bg-[#080a11]/95 backdrop-blur-2xl border-t border-white/[0.08] px-5 flex items-center justify-between z-40 select-none">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-white/10 flex items-center justify-center text-zinc-500">
+            <Music className="w-6 h-6" />
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-bold text-white">Thư viện nhạc cá nhân trống</p>
+            <p className="text-xs text-zinc-400">Hãy thêm file MP3 / MP4 từ máy tính của bạn</p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setIsUploadModalOpen(true)}
+          className="px-5 py-2.5 rounded-xl font-bold text-xs text-black flex items-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer"
+          style={{ backgroundColor: accentTheme.color }}
+        >
+          <UploadCloud className="w-4 h-4" />
+          <span>Tải Nhạc Lên Ngay (+ MP3/MP4)</span>
+        </button>
+      </footer>
+    );
+  }
 
   const isLiked = likedSongIds.has(currentSong.id);
-  const isDownloaded = offlineSongIds.has(currentSong.id);
+  const isDownloaded = offlineSongIds.has(currentSong.id) || currentSong.isCustomUpload;
   const isDownloading = downloadingSongIds.has(currentSong.id);
 
   const formatTime = (secs: number) => {
@@ -139,22 +165,24 @@ export const DesktopPlayerBar: React.FC = () => {
 
         {/* Download & Like Buttons */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
-          <button
-            onClick={() => toggleOfflineDownload(currentSong)}
-            disabled={isDownloading}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-              isDownloaded ? 'text-emerald-400' : 'text-zinc-400 hover:text-white'
-            }`}
-            title={isDownloaded ? 'Đã tải về nghe Offline (Bấm để xóa)' : 'Tải về nghe Offline'}
-          >
-            {isDownloading ? (
-              <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-            ) : isDownloaded ? (
-              <CheckCircle2 className="w-4 h-4" />
-            ) : (
-              <ArrowDownToLine className="w-4 h-4" />
-            )}
-          </button>
+          {!currentSong.isCustomUpload && (
+            <button
+              onClick={() => toggleOfflineDownload(currentSong)}
+              disabled={isDownloading}
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                isDownloaded ? 'text-emerald-400' : 'text-zinc-400 hover:text-white'
+              }`}
+              title={isDownloaded ? 'Đã tải về nghe Offline (Bấm để xóa)' : 'Tải về nghe Offline'}
+            >
+              {isDownloading ? (
+                <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+              ) : isDownloaded ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : (
+                <ArrowDownToLine className="w-4 h-4" />
+              )}
+            </button>
+          )}
 
           <motion.button
             whileTap={{ scale: 0.8 }}

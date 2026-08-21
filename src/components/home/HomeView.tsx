@@ -6,27 +6,27 @@ import { ForYouSection } from './ForYouSection';
 import { TopArtists } from './TopArtists';
 import { TrendingCharts } from './TrendingCharts';
 import { useMusic } from '../../context/MusicPlayerContext';
-import { MOCK_SONGS, MOCK_ARTISTS } from '../../data/mockData';
+import { MOCK_ARTISTS } from '../../data/mockData';
 
 export const HomeView: React.FC = () => {
-  const { history, userPlaylists, setSelectedArtist, setSelectedPlaylist } = useMusic();
+  const { allSongs, history, userPlaylists, setSelectedArtist, setSelectedPlaylist } = useMusic();
   const [activeMood, setActiveMood] = useState<string>('Tất cả');
 
   // Filter songs based on active mood
   const moodFilteredSongs = useMemo(() => {
-    if (activeMood === 'Tất cả') return MOCK_SONGS;
-    return MOCK_SONGS.filter(
+    if (activeMood === 'Tất cả') return allSongs;
+    return allSongs.filter(
       (song) => song.mood?.includes(activeMood) || song.genre.includes(activeMood)
     );
-  }, [activeMood]);
+  }, [activeMood, allSongs]);
 
   // Recently played items
   const recentItems = useMemo(() => {
     if (history.length > 0) {
       return [...history, ...userPlaylists].slice(0, 6);
     }
-    return [...MOCK_SONGS.slice(0, 4), ...userPlaylists.slice(0, 2)];
-  }, [history, userPlaylists]);
+    return [...allSongs.slice(0, 4), ...userPlaylists.slice(0, 2)];
+  }, [history, userPlaylists, allSongs]);
 
   return (
     <div className="space-y-6 pb-28 md:pb-8 text-left">
@@ -42,10 +42,12 @@ export const HomeView: React.FC = () => {
       />
 
       {/* Recently Played Section */}
-      <RecentlyPlayed
-        items={recentItems}
-        onSelectPlaylist={setSelectedPlaylist}
-      />
+      {recentItems.length > 0 && (
+        <RecentlyPlayed
+          items={recentItems}
+          onSelectPlaylist={setSelectedPlaylist}
+        />
+      )}
 
       {/* For You Section (Daily Mixes + Recommended Songs) */}
       <ForYouSection
@@ -61,7 +63,7 @@ export const HomeView: React.FC = () => {
       />
 
       {/* Trending Top 5 Charts */}
-      <TrendingCharts songs={MOCK_SONGS} />
+      {allSongs.length > 0 && <TrendingCharts songs={allSongs} />}
     </div>
   );
 };

@@ -3,10 +3,10 @@ import { SearchBar } from './SearchBar';
 import { GenreGrid } from './GenreGrid';
 import { SearchResults } from './SearchResults';
 import { useMusic } from '../../context/MusicPlayerContext';
-import { MOCK_SONGS, MOCK_ARTISTS } from '../../data/mockData';
+import { MOCK_ARTISTS } from '../../data/mockData';
 
 export const SearchView: React.FC = () => {
-  const { userPlaylists, setSelectedArtist, setSelectedPlaylist } = useMusic();
+  const { allSongs, userPlaylists, setSelectedArtist, setSelectedPlaylist } = useMusic();
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   return (
@@ -22,7 +22,7 @@ export const SearchView: React.FC = () => {
       {searchQuery.trim().length > 0 ? (
         <SearchResults
           query={searchQuery}
-          songs={MOCK_SONGS}
+          songs={allSongs}
           artists={MOCK_ARTISTS}
           playlists={userPlaylists}
           onSelectArtist={setSelectedArtist}

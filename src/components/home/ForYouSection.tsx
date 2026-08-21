@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Playlist, Song } from '../../types/music';
 import { SongCard } from '../common/SongCard';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, UploadCloud } from 'lucide-react';
 import { useMusic } from '../../context/MusicPlayerContext';
 
 interface ForYouSectionProps {
@@ -15,7 +15,7 @@ export const ForYouSection: React.FC<ForYouSectionProps> = ({
   recommendedSongs,
   onSelectPlaylist,
 }) => {
-  const { accentTheme } = useMusic();
+  const { accentTheme, setIsUploadModalOpen } = useMusic();
 
   return (
     <div className="space-y-6 select-none text-left">
@@ -28,7 +28,7 @@ export const ForYouSection: React.FC<ForYouSectionProps> = ({
               <span>Dành cho bạn</span>
             </div>
             <h2 className="text-base font-extrabold text-white tracking-tight mt-0.5">
-              Mix Hàng Ngày Cá Nhân Hóa
+              Tuyển Tập Của Bạn
             </h2>
           </div>
         </div>
@@ -46,25 +46,47 @@ export const ForYouSection: React.FC<ForYouSectionProps> = ({
       </div>
 
       {/* Recommended Tracks (Có thể bạn thích) */}
-      <div className="space-y-3">
-        <div className="px-4 flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-zinc-400 block">
-              Gợi ý theo gu âm nhạc
-            </span>
-            <h2 className="text-base font-extrabold text-white tracking-tight mt-0.5">
-              Có Thể Bạn Thích
-            </h2>
+      {recommendedSongs.length > 0 ? (
+        <div className="space-y-3">
+          <div className="px-4 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400 block">
+                Nhạc của bạn
+              </span>
+              <h2 className="text-base font-extrabold text-white tracking-tight mt-0.5">
+                Bài Hát Đã Tải Lên ({recommendedSongs.length})
+              </h2>
+            </div>
+          </div>
+
+          {/* Horizontal Carousel */}
+          <div className="flex items-center gap-3 overflow-x-auto no-scrollbar px-4 pb-1">
+            {recommendedSongs.map((song) => (
+              <SongCard key={song.id} song={song} />
+            ))}
           </div>
         </div>
-
-        {/* Horizontal Carousel */}
-        <div className="flex items-center gap-3 overflow-x-auto no-scrollbar px-4 pb-1">
-          {recommendedSongs.map((song) => (
-            <SongCard key={song.id} song={song} />
-          ))}
+      ) : (
+        <div className="px-4">
+          <div className="p-6 rounded-3xl glass-card border border-white/5 text-center space-y-3">
+            <UploadCloud className="w-8 h-8 mx-auto text-emerald-400 opacity-60" />
+            <div>
+              <h3 className="text-sm font-bold text-white">Chưa có bài hát nào trong danh sách</h3>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Tải lên file MP3 / MP4 từ máy tính hoặc điện thoại để bắt đầu tạo thư viện nhạc của riêng bạn!
+              </p>
+            </div>
+            <button
+              onClick={() => setIsUploadModalOpen(true)}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-black transition-transform active:scale-95 cursor-pointer shadow-md inline-flex items-center gap-1.5"
+              style={{ backgroundColor: accentTheme.color }}
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>Tải Nhạc Lên Ngay (+ MP3/MP4)</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
