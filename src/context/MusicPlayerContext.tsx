@@ -547,7 +547,8 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
     meta: { title: string; artist: string; album?: string; coverUrl?: string }
   ): Promise<Song> => {
     // 1. Try uploading to Supabase Cloud
-    let createdSong = await uploadSongToCloud(file, meta);
+    const cloudRes = await uploadSongToCloud(file, meta);
+    let createdSong = cloudRes.song;
 
     // 2. If offline or error, create fallback local Song object
     if (!createdSong) {

@@ -73,11 +73,10 @@ export const fetchCloudSongs = async (): Promise<Song[]> => {
 export const uploadSongToCloud = async (
   file: File,
   meta: { title: string; artist: string; album?: string; coverUrl?: string }
-): Promise<Song | null> => {
+): Promise<{ song: Song | null; error?: string }> => {
   try {
     const songId = `song_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const fileExt = file.name.split('.').pop() || 'mp3';
-    // Clean filename for S3 compatibility
     const safeFileName = `${songId}.${fileExt}`;
 
     // 1. Calculate duration via temporary Audio object
@@ -104,7 +103,10 @@ export const uploadSongToCloud = async (
 
     if (storageError) {
       console.error('Supabase storage upload error:', storageError);
-      throw new Error(`Storage upload failed: ${storageError.message}`);
+      return {
+        song: null,
+        error: `Lỗi cấp quyền Storage: ${storageError.message}. Hãy chạy lệnh SQL phân quyền Storage trên Supabase!`,
+      };
     }
 
     // 3. Get Public Streaming URL
@@ -132,12 +134,16 @@ export const uploadSongToCloud = async (
 
     if (dbError) {
       console.warn('Supabase DB insert notice:', dbError.message);
+      return {
+        song: null,
+        error: `Lỗi bảng Database: ${dbError.message}`,
+      };
     }
 
-    return rowToSong(dbRow);
-  } catch (err) {
+    return { song: rowToSong(dbRow) };
+  } catch (err: any) {
     console.error('Failed to upload song to Supabase:', err);
-    return null;
+    return { song: null, error: err.message || 'Lỗi không xác định khi tải lên Cloud' };
   }
 };
 
