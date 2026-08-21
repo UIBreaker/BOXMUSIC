@@ -16,6 +16,9 @@ import {
   Clock,
   Sparkles,
   SlidersHorizontal,
+  ArrowDownToLine,
+  CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 import { useMusic } from '../../context/MusicPlayerContext';
 import type { AudioQuality } from '../../types/music';
@@ -36,6 +39,9 @@ export const DesktopPlayerBar: React.FC = () => {
     isDesktopRightPanelOpen,
     audioQuality,
     accentTheme,
+    offlineSongIds,
+    downloadingSongIds,
+    toggleOfflineDownload,
     togglePlay,
     nextSong,
     prevSong,
@@ -58,6 +64,8 @@ export const DesktopPlayerBar: React.FC = () => {
   if (!currentSong) return null;
 
   const isLiked = likedSongIds.has(currentSong.id);
+  const isDownloaded = offlineSongIds.has(currentSong.id);
+  const isDownloading = downloadingSongIds.has(currentSong.id);
 
   const formatTime = (secs: number) => {
     const min = Math.floor(secs / 60);
@@ -98,7 +106,7 @@ export const DesktopPlayerBar: React.FC = () => {
   return (
     <footer className="h-22 bg-[#080a11]/95 backdrop-blur-2xl border-t border-white/[0.08] px-5 flex items-center justify-between z-40 select-none">
       {/* Left: Track Info & Quick Actions */}
-      <div className="flex items-center gap-3.5 w-1/4 min-w-[200px]">
+      <div className="flex items-center gap-3.5 w-1/4 min-w-[220px]">
         {/* Cover thumbnail */}
         <div
           onClick={() => setIsFullScreen(true)}
@@ -116,27 +124,51 @@ export const DesktopPlayerBar: React.FC = () => {
 
         {/* Title & Artist */}
         <div className="min-w-0 flex-1 text-left">
-          <p className="text-sm font-bold text-white truncate hover:underline cursor-pointer">
-            {currentSong.title}
-          </p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-bold text-white truncate hover:underline cursor-pointer">
+              {currentSong.title}
+            </p>
+            {isDownloaded && (
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400/20 flex-shrink-0" />
+            )}
+          </div>
           <p className="text-xs text-zinc-400 truncate mt-0.5 font-medium">
             {currentSong.artist}
           </p>
         </div>
 
-        {/* Like Button */}
-        <motion.button
-          whileTap={{ scale: 0.8 }}
-          onClick={(e) => toggleLike(currentSong.id, e)}
-          className="w-9 h-9 rounded-full flex items-center justify-center text-zinc-400 hover:text-white transition-colors cursor-pointer flex-shrink-0"
-          title="Yêu thích"
-        >
-          <Heart
-            className={`w-5 h-5 transition-colors ${
-              isLiked ? 'text-rose-500 fill-rose-500' : 'text-zinc-400 hover:text-zinc-200'
+        {/* Download & Like Buttons */}
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <button
+            onClick={() => toggleOfflineDownload(currentSong)}
+            disabled={isDownloading}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+              isDownloaded ? 'text-emerald-400' : 'text-zinc-400 hover:text-white'
             }`}
-          />
-        </motion.button>
+            title={isDownloaded ? 'Đã tải về nghe Offline (Bấm để xóa)' : 'Tải về nghe Offline'}
+          >
+            {isDownloading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+            ) : isDownloaded ? (
+              <CheckCircle2 className="w-4 h-4" />
+            ) : (
+              <ArrowDownToLine className="w-4 h-4" />
+            )}
+          </button>
+
+          <motion.button
+            whileTap={{ scale: 0.8 }}
+            onClick={(e) => toggleLike(currentSong.id, e)}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white transition-colors cursor-pointer"
+            title="Yêu thích"
+          >
+            <Heart
+              className={`w-4 h-4 transition-colors ${
+                isLiked ? 'text-rose-500 fill-rose-500' : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            />
+          </motion.button>
+        </div>
       </div>
 
       {/* Center: Controls & Seek Bar */}

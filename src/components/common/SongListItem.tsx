@@ -1,7 +1,16 @@
 import React, { useState } from 'react';
 import type { Song } from '../../types/music';
 import { useMusic } from '../../context/MusicPlayerContext';
-import { Play, Heart, MoreVertical, ListPlus, FolderPlus } from 'lucide-react';
+import {
+  Play,
+  Heart,
+  MoreVertical,
+  ListPlus,
+  FolderPlus,
+  ArrowDownToLine,
+  CheckCircle2,
+  Loader2,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface SongListItemProps {
@@ -27,6 +36,9 @@ export const SongListItem: React.FC<SongListItemProps> = ({
     userPlaylists,
     addSongToPlaylist,
     accentTheme,
+    offlineSongIds,
+    downloadingSongIds,
+    toggleOfflineDownload,
   } = useMusic();
 
   const [showMenu, setShowMenu] = useState(false);
@@ -34,6 +46,8 @@ export const SongListItem: React.FC<SongListItemProps> = ({
 
   const isCurrent = currentSong?.id === song.id;
   const isLiked = likedSongIds.has(song.id);
+  const isDownloaded = offlineSongIds.has(song.id);
+  const isDownloading = downloadingSongIds.has(song.id);
 
   const formatTime = (secs: number) => {
     const min = Math.floor(secs / 60);
@@ -43,6 +57,11 @@ export const SongListItem: React.FC<SongListItemProps> = ({
 
   const handlePlay = () => {
     playSong(song, playlistContext);
+  };
+
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleOfflineDownload(song);
   };
 
   return (
@@ -93,14 +112,19 @@ export const SongListItem: React.FC<SongListItemProps> = ({
 
         {/* Title & Artist */}
         <div className="min-w-0 flex-1 text-left">
-          <p
-            className={`text-xs font-bold truncate transition-colors ${
-              isCurrent ? 'text-white' : 'text-zinc-200 group-hover:text-white'
-            }`}
-            style={{ color: isCurrent ? accentTheme.color : undefined }}
-          >
-            {song.title}
-          </p>
+          <div className="flex items-center gap-1.5">
+            <p
+              className={`text-xs font-bold truncate transition-colors ${
+                isCurrent ? 'text-white' : 'text-zinc-200 group-hover:text-white'
+              }`}
+              style={{ color: isCurrent ? accentTheme.color : undefined }}
+            >
+              {song.title}
+            </p>
+            {isDownloaded && (
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400/20 flex-shrink-0" />
+            )}
+          </div>
           <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-zinc-400 truncate">
             <span className="truncate">{song.artist}</span>
             <span>•</span>
@@ -109,11 +133,32 @@ export const SongListItem: React.FC<SongListItemProps> = ({
         </div>
       </div>
 
-      {/* Right side: Like + Menu */}
+      {/* Right side: Offline Download + Like + Menu */}
       <div
         className="flex items-center gap-1 flex-shrink-0"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Offline Download Button */}
+        <button
+          onClick={handleDownload}
+          disabled={isDownloading}
+          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+            isDownloaded
+              ? 'text-emerald-400'
+              : 'text-zinc-500 hover:text-zinc-200 opacity-80 sm:opacity-0 group-hover:opacity-100'
+          }`}
+          title={isDownloaded ? 'Đã lưu ngoại tuyến (Bấm để xóa)' : 'Tải về nghe ngoại tuyến'}
+        >
+          {isDownloading ? (
+            <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+          ) : isDownloaded ? (
+            <CheckCircle2 className="w-4 h-4" />
+          ) : (
+            <ArrowDownToLine className="w-4 h-4" />
+          )}
+        </button>
+
+        {/* Like Button */}
         <button
           onClick={(e) => toggleLike(song.id, e)}
           className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-500 hover:text-white transition-transform active:scale-75 cursor-pointer"
@@ -151,7 +196,7 @@ export const SongListItem: React.FC<SongListItemProps> = ({
                   initial={{ opacity: 0, scale: 0.9, y: 5 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: 5 }}
-                  className="absolute right-0 top-9 z-50 p-2 rounded-2xl glass-panel shadow-2xl border border-white/15 w-48 text-left space-y-1"
+                  className="absolute right-0 top-9 z-50 p-2 rounded-2xl glass-panel shadow-2xl border border-white/15 w-52 text-left space-y-1"
                 >
                   <button
                     onClick={() => {
@@ -165,11 +210,19 @@ export const SongListItem: React.FC<SongListItemProps> = ({
                   </button>
 
                   <button
+                    onClick={handleDownload}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
+                  >
+                    <ArrowDownToLine className="w-4 h-4 text-cyan-400" />
+                    <span>{isDownloaded ? 'Xóa khỏi bộ nhớ Offline' : 'Tải về nghe Offline'}</span>
+                  </button>
+
+                  <button
                     onClick={() => setShowPlaylistPicker(!showPlaylistPicker)}
                     className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
                   >
                     <div className="flex items-center gap-2.5">
-                      <FolderPlus className="w-4 h-4 text-cyan-400" />
+                      <FolderPlus className="w-4 h-4 text-purple-400" />
                       <span>Thêm vào Playlist</span>
                     </div>
                   </button>

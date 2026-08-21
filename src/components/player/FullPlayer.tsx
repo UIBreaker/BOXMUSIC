@@ -17,6 +17,9 @@ import {
   Share2,
   Clock,
   Check,
+  ArrowDownToLine,
+  CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 import { useMusic } from '../../context/MusicPlayerContext';
 import { SyncedLyrics } from './SyncedLyrics';
@@ -39,6 +42,9 @@ export const FullPlayer: React.FC = () => {
     likedSongIds,
     turntableMode,
     accentTheme,
+    offlineSongIds,
+    downloadingSongIds,
+    toggleOfflineDownload,
     setIsFullScreen,
     setPlayerSubTab,
     togglePlay,
@@ -60,6 +66,8 @@ export const FullPlayer: React.FC = () => {
   if (!isFullScreen || !currentSong) return null;
 
   const isLiked = likedSongIds.has(currentSong.id);
+  const isDownloaded = offlineSongIds.has(currentSong.id);
+  const isDownloading = downloadingSongIds.has(currentSong.id);
 
   // Format seconds to mm:ss
   const formatTime = (secs: number) => {
@@ -137,6 +145,24 @@ export const FullPlayer: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5">
+            {/* Offline Download Button */}
+            <button
+              onClick={() => toggleOfflineDownload(currentSong)}
+              disabled={isDownloading}
+              className={`w-9 h-9 rounded-full glass-card flex items-center justify-center transition-colors cursor-pointer ${
+                isDownloaded ? 'text-emerald-400 border-emerald-500/40' : 'text-zinc-400 hover:text-white'
+              }`}
+              title={isDownloaded ? 'Đã tải về nghe Offline' : 'Tải về nghe Offline'}
+            >
+              {isDownloading ? (
+                <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+              ) : isDownloaded ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : (
+                <ArrowDownToLine className="w-4 h-4" />
+              )}
+            </button>
+
             {/* Sleep Timer */}
             <button
               onClick={() => setShowSleepTimerModal(true)}
@@ -271,9 +297,16 @@ export const FullPlayer: React.FC = () => {
           {/* Track Info & Like Button */}
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1 pr-4 text-left">
-              <h2 className="text-xl font-extrabold text-white truncate tracking-tight">
-                {currentSong.title}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-extrabold text-white truncate tracking-tight">
+                  {currentSong.title}
+                </h2>
+                {isDownloaded && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                    OFFLINE
+                  </span>
+                )}
+              </div>
               <p className="text-sm font-semibold text-zinc-400 truncate mt-0.5">
                 {currentSong.artist}
               </p>

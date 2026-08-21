@@ -6,6 +6,7 @@ import { SongListItem } from '../common/SongListItem';
 import { SongCard } from '../common/SongCard';
 import { CreatePlaylistModal } from './CreatePlaylistModal';
 import { PlaylistDetailModal } from './PlaylistDetailModal';
+import { SyncModal } from './SyncModal';
 import {
   Heart,
   Plus,
@@ -15,27 +16,34 @@ import {
   Music4,
   Play,
   Sparkles,
+  ArrowDownToLine,
+  HardDrive,
+  Share2,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-type LibraryFilter = 'all' | 'playlists' | 'liked';
+type LibraryFilter = 'all' | 'playlists' | 'liked' | 'offline';
 
 export const LibraryView: React.FC = () => {
   const {
     likedSongIds,
     userPlaylists,
+    offlineSongIds,
+    storageUsedBytes,
     playSong,
     accentTheme,
     selectedPlaylist,
     setSelectedPlaylist,
     isCreatePlaylistOpen,
     setIsCreatePlaylistOpen,
+    setIsSyncModalOpen,
   } = useMusic();
 
   const [filter, setFilter] = useState<LibraryFilter>('all');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
   const likedSongs: Song[] = MOCK_SONGS.filter((s) => likedSongIds.has(s.id));
+  const offlineSongs: Song[] = MOCK_SONGS.filter((s) => offlineSongIds.has(s.id));
 
   const handlePlayLikedSongs = () => {
     if (likedSongs.length > 0) {
@@ -43,15 +51,28 @@ export const LibraryView: React.FC = () => {
     }
   };
 
-  const filterTabs: { id: LibraryFilter; label: string }[] = [
+  const handlePlayOfflineSongs = () => {
+    if (offlineSongs.length > 0) {
+      playSong(offlineSongs[0], offlineSongs);
+    }
+  };
+
+  const filterTabs: { id: LibraryFilter; label: string; count?: number }[] = [
     { id: 'all', label: 'Tất cả' },
-    { id: 'playlists', label: 'Danh sách phát' },
-    { id: 'liked', label: 'Đã thích' },
+    { id: 'liked', label: 'Đã thích', count: likedSongs.length },
+    { id: 'offline', label: 'Đã tải về (Offline)', count: offlineSongs.length },
+    { id: 'playlists', label: 'Danh sách phát', count: userPlaylists.length },
   ];
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 MB';
+    const mb = bytes / (1024 * 1024);
+    return `${mb.toFixed(1)} MB`;
+  };
 
   return (
     <div className="space-y-4 px-4 select-none text-left pb-28 md:pb-8">
-      {/* Top Library Title & Add Button */}
+      {/* Top Library Title & Sync/Add Buttons */}
       <div className="flex items-center justify-between pt-2">
         <div className="flex items-center gap-2">
           <FolderHeart className="w-5 h-5" style={{ color: accentTheme.color }} />
@@ -61,6 +82,16 @@ export const LibraryView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Sync & Backup Button */}
+          <button
+            onClick={() => setIsSyncModalOpen(true)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold glass-card text-zinc-300 hover:text-white border border-white/10 hover:border-white/20 transition-all cursor-pointer"
+            title="Đồng bộ đa thiết bị & Sao lưu"
+          >
+            <Share2 className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Sao lưu & Đồng bộ</span>
+          </button>
+
           {/* Grid / List Switcher */}
           <button
             onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
@@ -89,6 +120,28 @@ export const LibraryView: React.FC = () => {
         </div>
       </div>
 
+      {/* Storage & Offline Status Pill Banner */}
+      <div className="p-3 rounded-2xl glass-card border border-white/5 flex items-center justify-between">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <HardDrive className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-white">
+              Bộ nhớ ngoại tuyến: <span className="text-emerald-400">{formatBytes(storageUsedBytes)}</span>
+            </p>
+            <p className="text-[10px] text-zinc-400 truncate">
+              {offlineSongs.length} bài hát sẵn sàng nghe khi không có mạng
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setIsSyncModalOpen(true)}
+          className="text-[11px] font-bold text-cyan-400 hover:underline cursor-pointer flex-shrink-0"
+        >
+          Quản lý
+        </button>
+      </div>
+
       {/* Filter Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
         {filterTabs.map((tab) => {
@@ -97,7 +150,7 @@ export const LibraryView: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setFilter(tab.id)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 ${
                 isActive
                   ? 'text-black shadow-md'
                   : 'glass-card text-zinc-400 hover:text-white'
@@ -106,7 +159,16 @@ export const LibraryView: React.FC = () => {
                 backgroundColor: isActive ? accentTheme.color : undefined,
               }}
             >
-              {tab.label}
+              <span>{tab.label}</span>
+              {tab.count !== undefined && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                    isActive ? 'bg-black/20 text-black font-bold' : 'bg-white/10 text-zinc-400'
+                  }`}
+                >
+                  {tab.count}
+                </span>
+              )}
             </button>
           );
         })}
@@ -120,7 +182,6 @@ export const LibraryView: React.FC = () => {
           onClick={handlePlayLikedSongs}
           className="relative p-5 rounded-3xl overflow-hidden cursor-pointer shadow-xl bg-gradient-to-br from-purple-700 via-indigo-900 to-slate-950 border border-white/15 flex items-center justify-between group"
         >
-          {/* Ambient Glow */}
           <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-pink-500/20 blur-2xl pointer-events-none" />
 
           <div className="flex items-center gap-3.5 z-10 min-w-0">
@@ -134,7 +195,7 @@ export const LibraryView: React.FC = () => {
                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
               </h3>
               <p className="text-xs text-zinc-300 mt-0.5">
-                {likedSongs.length} ca khúc yêu thích • Tự động đồng bộ
+                {likedSongs.length} ca khúc yêu thích • Tự động lưu vĩnh viễn
               </p>
             </div>
           </div>
@@ -150,6 +211,48 @@ export const LibraryView: React.FC = () => {
             <Play className="w-5 h-5 fill-black text-black ml-0.5" />
           </button>
         </motion.div>
+      )}
+
+      {/* Offline Songs List (When filter is 'offline') */}
+      {filter === 'offline' && (
+        <div className="space-y-3 pt-1">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-1.5">
+              <ArrowDownToLine className="w-4 h-4 text-cyan-400" />
+              Danh sách nhạc Offline ({offlineSongs.length})
+            </h3>
+            {offlineSongs.length > 0 && (
+              <button
+                onClick={handlePlayOfflineSongs}
+                className="text-xs font-bold text-emerald-400 hover:underline cursor-pointer flex items-center gap-1"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                Phát tất cả
+              </button>
+            )}
+          </div>
+
+          {offlineSongs.length === 0 ? (
+            <div className="py-12 text-center text-zinc-500 glass-card rounded-2xl p-6">
+              <ArrowDownToLine className="w-8 h-8 mx-auto opacity-30 mb-2 text-cyan-400" />
+              <p className="text-xs font-semibold text-zinc-300">Chưa có bài hát nào được lưu ngoại tuyến</p>
+              <p className="text-[11px] text-zinc-500 mt-0.5 max-w-xs mx-auto">
+                Bấm vào biểu tượng tải xuống (mũi tên) ở cạnh bài hát bất kỳ để nghe mà không cần Internet!
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {offlineSongs.map((song, index) => (
+                <SongListItem
+                  key={song.id}
+                  song={song}
+                  index={index}
+                  playlistContext={offlineSongs}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Liked Songs List (When filter is 'liked') */}
@@ -231,6 +334,9 @@ export const LibraryView: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Sync & Multi-device Modal */}
+      <SyncModal />
 
       {/* Create Playlist Modal */}
       <CreatePlaylistModal

@@ -12,6 +12,23 @@ import type {
   AccentTheme,
 } from '../types/music';
 import { MOCK_SONGS, MOCK_PLAYLISTS, ACCENT_THEMES } from '../data/mockData';
+import {
+  getStoredLikedSongs,
+  saveStoredLikedSongs,
+  getStoredPlaylists,
+  saveStoredPlaylists,
+  getStoredOfflineSongIds,
+  saveStoredOfflineSongIds,
+  getStoredTheme,
+  saveStoredTheme,
+  saveAudioBlobOffline,
+  removeAudioBlobOffline,
+  getOfflineAudioBlobUrl,
+  calculateTotalStorageUsed,
+  clearAllOfflineCache,
+  generateBackupJSON,
+  parseBackupJSON,
+} from '../services/storageService';
 import confetti from 'canvas-confetti';
 
 interface MusicContextType {
@@ -33,6 +50,12 @@ interface MusicContextType {
   userPlaylists: Playlist[];
   turntableMode: boolean;
   
+  // Offline & Storage States
+  offlineSongIds: Set<string>;
+  storageUsedBytes: number;
+  isSyncModalOpen: boolean;
+  downloadingSongIds: Set<string>;
+
   // Desktop Pro States
   desktopRightPanelTab: DesktopRightPanelTab;
   isDesktopRightPanelOpen: boolean;
@@ -64,6 +87,13 @@ interface MusicContextType {
   toggleTurntableMode: () => void;
   getAudioWaveform: () => number[];
   
+  // Offline & Storage Actions
+  toggleOfflineDownload: (song: Song) => Promise<void>;
+  clearAllOfflineStorage: () => Promise<void>;
+  exportLibraryBackup: () => void;
+  importLibraryBackup: (jsonStr: string) => boolean;
+  setIsSyncModalOpen: (val: boolean) => void;
+
   // Desktop Panel actions
   setDesktopRightPanelTab: (tab: DesktopRightPanelTab) => void;
   setIsDesktopRightPanelOpen: (val: boolean) => void;
@@ -87,14 +117,28 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
   const [playerSubTab, setPlayerSubTab] = useState<PlayerSubTab>('player');
   const [mainTab, setMainTab] = useState<MainTab>('home');
-  const [accentTheme, setAccentTheme] = useState<AccentTheme>(ACCENT_THEMES[0]);
+  
+  // Load persistent states
+  const [accentTheme, setAccentThemeState] = useState<AccentTheme>(() =>
+    getStoredTheme(ACCENT_THEMES[0])
+  );
   const [queue, setQueue] = useState<Song[]>(MOCK_SONGS.slice(1));
   const [history, setHistory] = useState<Song[]>([]);
-  const [likedSongIds, setLikedSongIds] = useState<Set<string>>(
-    new Set(MOCK_SONGS.filter(s => s.isLiked).map(s => s.id))
+  const [likedSongIds, setLikedSongIds] = useState<Set<string>>(() =>
+    getStoredLikedSongs(MOCK_SONGS.filter((s) => s.isLiked).map((s) => s.id))
   );
-  const [userPlaylists, setUserPlaylists] = useState<Playlist[]>(MOCK_PLAYLISTS);
+  const [userPlaylists, setUserPlaylists] = useState<Playlist[]>(() =>
+    getStoredPlaylists(MOCK_PLAYLISTS)
+  );
   const [turntableMode, setTurntableMode] = useState<boolean>(false);
+
+  // Offline & Sync States
+  const [offlineSongIds, setOfflineSongIds] = useState<Set<string>>(() =>
+    getStoredOfflineSongIds()
+  );
+  const [storageUsedBytes, setStorageUsedBytes] = useState<number>(0);
+  const [downloadingSongIds, setDownloadingSongIds] = useState<Set<string>>(new Set());
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
 
   // Desktop Pro States
   const [desktopRightPanelTab, setDesktopRightPanelTab] = useState<DesktopRightPanelTab>('nowPlaying');
@@ -104,9 +148,19 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
   const [isCreatePlaylistOpen, setIsCreatePlaylistOpen] = useState<boolean>(false);
 
-  // Audio elements
+  // Audio element ref
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const synthIntervalRef = useRef<number | null>(null);
+
+  // Update storage size calculation on mount and state changes
+  const refreshStorageSize = async () => {
+    const bytes = await calculateTotalStorageUsed();
+    setStorageUsedBytes(bytes);
+  };
+
+  useEffect(() => {
+    refreshStorageSize();
+  }, [offlineSongIds]);
 
   // Initialize Audio
   useEffect(() => {
@@ -151,6 +205,7 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   useEffect(() => {
     document.documentElement.style.setProperty('--accent-color', accentTheme.color);
     document.documentElement.style.setProperty('--accent-glow', accentTheme.glow);
+    saveStoredTheme(accentTheme);
   }, [accentTheme]);
 
   // Audio timer ticker fallback
@@ -187,7 +242,7 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   };
 
-  const playSong = (song: Song, newQueue?: Song[]) => {
+  const playSong = async (song: Song, newQueue?: Song[]) => {
     setCurrentSong(song);
     setDuration(song.duration);
     setCurrentTime(0);
@@ -202,7 +257,9 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
     setHistory((prev) => [song, ...prev.filter((s) => s.id !== song.id)].slice(0, 20));
 
     if (audioRef.current) {
-      audioRef.current.src = song.audioUrl;
+      // Check if song is cached offline in IndexedDB
+      const offlineBlobUrl = await getOfflineAudioBlobUrl(song.id);
+      audioRef.current.src = offlineBlobUrl || song.audioUrl;
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {
         // Fallback handles smoothly
@@ -341,6 +398,7 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
           });
         }
       }
+      saveStoredLikedSongs(next);
       return next;
     });
   };
@@ -368,33 +426,108 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
       isPersonal: true,
       author: 'Bạn',
       updatedAt: 'Vừa tạo',
-      gradient: 'from-emerald-600 via-teal-900 to-slate-950'
+      gradient: 'from-emerald-600 via-teal-900 to-slate-950',
     };
-    setUserPlaylists((prev) => [newPlaylist, ...prev]);
+    setUserPlaylists((prev) => {
+      const updated = [newPlaylist, ...prev];
+      saveStoredPlaylists(updated);
+      return updated;
+    });
   };
 
   const addSongToPlaylist = (playlistId: string, songId: string) => {
-    setUserPlaylists((prev) =>
-      prev.map((pl) => {
+    setUserPlaylists((prev) => {
+      const updated = prev.map((pl) => {
         if (pl.id === playlistId) {
           if (pl.songIds.includes(songId)) return pl;
           return {
             ...pl,
             songIds: [...pl.songIds, songId],
             trackCount: pl.songIds.length + 1,
-            updatedAt: 'Vừa cập nhật'
+            updatedAt: 'Vừa cập nhật',
           };
         }
         return pl;
-      })
-    );
+      });
+      saveStoredPlaylists(updated);
+      return updated;
+    });
   };
 
   const toggleTurntableMode = () => {
     setTurntableMode((prev) => !prev);
   };
 
-  // Generate simulated dynamic waveform bars for visualizer based on playback
+  // Offline Download handler
+  const toggleOfflineDownload = async (song: Song) => {
+    const isDownloaded = offlineSongIds.has(song.id);
+    if (isDownloaded) {
+      await removeAudioBlobOffline(song.id);
+      setOfflineSongIds((prev) => {
+        const next = new Set(prev);
+        next.delete(song.id);
+        saveStoredOfflineSongIds(next);
+        return next;
+      });
+    } else {
+      setDownloadingSongIds((prev) => new Set(prev).add(song.id));
+      const success = await saveAudioBlobOffline(song);
+      setDownloadingSongIds((prev) => {
+        const next = new Set(prev);
+        next.delete(song.id);
+        return next;
+      });
+      if (success) {
+        setOfflineSongIds((prev) => {
+          const next = new Set(prev).add(song.id);
+          saveStoredOfflineSongIds(next);
+          return next;
+        });
+      }
+    }
+    refreshStorageSize();
+  };
+
+  const clearAllOfflineStorage = async () => {
+    await clearAllOfflineCache();
+    setOfflineSongIds(new Set());
+    setStorageUsedBytes(0);
+  };
+
+  // Export / Import library backup
+  const exportLibraryBackup = () => {
+    const jsonStr = generateBackupJSON(likedSongIds, userPlaylists, offlineSongIds);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `boxmusic-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importLibraryBackup = (jsonStr: string): boolean => {
+    const backup = parseBackupJSON(jsonStr);
+    if (!backup) return false;
+
+    const newLiked = new Set(backup.likedSongIds);
+    setLikedSongIds(newLiked);
+    saveStoredLikedSongs(newLiked);
+
+    if (backup.userPlaylists) {
+      setUserPlaylists(backup.userPlaylists);
+      saveStoredPlaylists(backup.userPlaylists);
+    }
+
+    if (backup.offlineSongIds) {
+      const newOffline = new Set(backup.offlineSongIds);
+      setOfflineSongIds(newOffline);
+      saveStoredOfflineSongIds(newOffline);
+    }
+    return true;
+  };
+
+  // Generate simulated dynamic waveform bars for visualizer
   const getAudioWaveform = () => {
     if (!isPlaying) {
       return [15, 20, 15, 10, 25, 15, 20, 10, 15, 20, 15, 10];
@@ -405,6 +538,11 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
       const variation = Math.sin(time * 3 + i * 0.8) * 35 + Math.cos(time * 2 + i * 0.5) * 25;
       return Math.max(12, Math.min(95, Math.abs(base + variation)));
     });
+  };
+
+  const setAccentTheme = (theme: AccentTheme) => {
+    setAccentThemeState(theme);
+    saveStoredTheme(theme);
   };
 
   return (
@@ -427,6 +565,10 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
         likedSongIds,
         userPlaylists,
         turntableMode,
+        offlineSongIds,
+        storageUsedBytes,
+        isSyncModalOpen,
+        downloadingSongIds,
         desktopRightPanelTab,
         isDesktopRightPanelOpen,
         audioQuality,
@@ -454,6 +596,11 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
         addSongToPlaylist,
         toggleTurntableMode,
         getAudioWaveform,
+        toggleOfflineDownload,
+        clearAllOfflineStorage,
+        exportLibraryBackup,
+        importLibraryBackup,
+        setIsSyncModalOpen,
         setDesktopRightPanelTab,
         setIsDesktopRightPanelOpen,
         setAudioQuality,
