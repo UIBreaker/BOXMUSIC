@@ -15,6 +15,7 @@ import { PlaylistDetailModal } from './components/library/PlaylistDetailModal';
 import { CreatePlaylistModal } from './components/library/CreatePlaylistModal';
 import { UploadSongModal } from './components/library/UploadSongModal';
 import { SyncModal } from './components/library/SyncModal';
+import { YouTubePlayerBridge } from './components/player/YouTubePlayerBridge';
 import { decodeSyncToken, fetchCloudSync } from './services/storageService';
 import confetti from 'canvas-confetti';
 import { CheckCircle2 } from 'lucide-react';
@@ -154,6 +155,9 @@ const MainAppLayout: React.FC = () => {
 
       {/* Full Screen Player Modal (Universal for mobile swipe up or desktop expand) */}
       <FullPlayer />
+
+      {/* Global YouTube Player Audio/Video Bridge */}
+      <YouTubePlayerBridge />
 
       {/* Shared Modals - Available Globally Across All Tabs */}
       <UploadSongModal />

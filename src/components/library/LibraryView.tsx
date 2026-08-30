@@ -99,7 +99,7 @@ export const LibraryView: React.FC = () => {
             title="Tải nhạc MP3 / MP4 từ máy"
           >
             <UploadCloud className="w-4 h-4" />
-            <span className="hidden sm:inline">Tải nhạc lên</span>
+            <span className="hidden sm:inline">Thêm nhạc / URL</span>
           </button>
 
           {/* Sync & Backup Button */}

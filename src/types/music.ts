@@ -12,6 +12,9 @@ export interface Song {
   coverUrl: string;
   duration: number; // in seconds
   audioUrl: string;
+  youtubeId?: string;
+  videoPreviewStart?: number;
+  isYoutube?: boolean;
   lyrics?: LyricLine[];
   genre: string;
   mood?: string[];
@@ -62,7 +65,7 @@ export type RepeatMode = 'off' | 'all' | 'one';
 
 export type MainTab = 'home' | 'search' | 'library';
 
-export type PlayerSubTab = 'player' | 'lyrics' | 'queue';
+export type PlayerSubTab = 'player' | 'video' | 'lyrics' | 'queue';
 
 export type DesktopRightPanelTab = 'nowPlaying' | 'lyrics' | 'queue';
 

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Song } from '../types/music';
+import { extractYouTubeId } from './urlSongService';
 
 const SUPABASE_URL = 'https://yuojwjulopewytphkgor.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_BFiMhaXqo3CzyKkdO5l2-Q_GlX65Gia';
@@ -26,24 +27,33 @@ export interface DBSongRow {
 }
 
 // Convert DB row to Song model
-export const rowToSong = (row: DBSongRow): Song => ({
-  id: row.id,
-  title: row.title,
-  artist: row.artist,
-  album: row.album || 'Tuyển Tập Đám Mây',
-  coverUrl:
-    row.cover_url ||
-    'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop',
-  duration: row.duration || 210,
-  audioUrl: row.audio_url,
-  genre: 'Nhạc Cá Nhân',
-  mood: ['Tất cả', 'Chill & Thư giãn'],
-  isLiked: true,
-  plays: 1,
-  releaseYear: new Date().getFullYear(),
-  isCustomUpload: true,
-  uploadedAt: row.created_at || new Date().toISOString(),
-});
+export const rowToSong = (row: DBSongRow): Song => {
+  const ytId = extractYouTubeId(row.audio_url);
+  const isYt = !!ytId;
+  const defaultYtCover = ytId ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg` : undefined;
+
+  return {
+    id: row.id,
+    title: row.title,
+    artist: row.artist,
+    album: row.album || (isYt ? 'YouTube Music' : 'Tuyển Tập Đám Mây'),
+    coverUrl:
+      row.cover_url ||
+      defaultYtCover ||
+      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop',
+    duration: row.duration || 210,
+    audioUrl: row.audio_url,
+    youtubeId: ytId || undefined,
+    isYoutube: isYt,
+    genre: isYt ? 'YouTube / Online' : 'Nhạc Cá Nhân',
+    mood: ['Tất cả', 'Chill & Thư giãn'],
+    isLiked: true,
+    plays: 1,
+    releaseYear: new Date().getFullYear(),
+    isCustomUpload: true,
+    uploadedAt: row.created_at || new Date().toISOString(),
+  };
+};
 
 // Fetch all songs from Supabase
 export const fetchCloudSongs = async (): Promise<Song[]> => {
@@ -142,6 +152,44 @@ export const uploadSongToCloud = async (
   } catch (err: any) {
     console.error('Failed to upload song to Supabase:', err);
     return { song: null, error: err.message || 'Lỗi không xác định khi tải lên Cloud' };
+  }
+};
+
+// Add Song to Cloud directly via URL / YouTube Link (No file storage upload needed)
+export const addUrlSongToCloud = async (meta: {
+  title: string;
+  artist: string;
+  album?: string;
+  coverUrl?: string;
+  audioUrl: string;
+  duration?: number;
+}): Promise<{ song: Song | null; error?: string }> => {
+  try {
+    const songId = `url_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const dbRow: DBSongRow = {
+      id: songId,
+      title: meta.title,
+      artist: meta.artist,
+      album: meta.album || 'Nhạc Trực Tuyến',
+      cover_url: meta.coverUrl,
+      audio_url: meta.audioUrl,
+      duration: meta.duration || 210,
+    };
+
+    const { error: dbError } = await supabase.from(TABLE_NAME).insert([dbRow]);
+
+    if (dbError) {
+      console.error('Supabase DB insert error:', dbError.message);
+      return {
+        song: null,
+        error: `Lỗi Database: ${dbError.message}`,
+      };
+    }
+
+    return { song: rowToSong(dbRow) };
+  } catch (err: any) {
+    console.error('Failed to add song by URL to Supabase:', err);
+    return { song: null, error: err.message || 'Lỗi không xác định khi lưu URL' };
   }
 };
 

@@ -38,9 +38,11 @@ import {
 import {
   fetchCloudSongs,
   uploadSongToCloud,
+  addUrlSongToCloud,
   deleteSongFromCloud,
   subscribeToSongUpdates,
 } from '../services/supabase';
+import { extractYouTubeId } from '../services/urlSongService';
 import confetti from 'canvas-confetti';
 import {
   updateMediaSession,
@@ -112,6 +114,7 @@ interface MusicContextType {
   
   // Custom Upload & Delete Actions
   uploadCustomSong: (file: File, meta: { title: string; artist: string; album?: string; coverUrl?: string }) => Promise<Song>;
+  addSongByUrl: (meta: { title: string; artist: string; album?: string; coverUrl?: string; audioUrl: string; duration?: number; youtubeId?: string; videoPreviewStart?: number }) => Promise<Song>;
   deleteSong: (songId: string) => Promise<void>;
   setIsUploadModalOpen: (val: boolean) => void;
 
@@ -410,24 +413,31 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
       });
     }
 
+    const isYt = song.isYoutube || !!song.youtubeId || song.audioUrl?.includes('youtube.com') || song.audioUrl?.includes('youtu.be');
+
     if (audioRef.current) {
-      // 1. If song is cached in IndexedDB, use local blob URL
-      let playUrl: string | null = await getOfflineAudioBlobUrl(song.id);
-      
-      if (!playUrl && song.isCustomUpload) {
-        playUrl = await getCustomSongBlobUrl(song.id);
-      }
+      if (isYt) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+      } else {
+        // 1. If song is cached in IndexedDB, use local blob URL
+        let playUrl: string | null = await getOfflineAudioBlobUrl(song.id);
+        
+        if (!playUrl && song.isCustomUpload) {
+          playUrl = await getCustomSongBlobUrl(song.id);
+        }
 
-      // 2. Otherwise use public Supabase Cloud streaming URL
-      if (!playUrl && song.audioUrl) {
-        playUrl = song.audioUrl;
-      }
+        // 2. Otherwise use public Supabase Cloud streaming URL
+        if (!playUrl && song.audioUrl) {
+          playUrl = song.audioUrl;
+        }
 
-      audioRef.current.src = playUrl || song.audioUrl;
-      audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(() => {
-        // Fallback handles smoothly
-      });
+        audioRef.current.src = playUrl || song.audioUrl;
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(() => {
+          // Fallback handles smoothly
+        });
+      }
     }
   };
 
@@ -698,6 +708,82 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
     return createdSong;
   };
 
+  // Add Song from YouTube URL or Direct Audio/Video Link
+  const addSongByUrl = async (meta: {
+    title: string;
+    artist: string;
+    album?: string;
+    coverUrl?: string;
+    audioUrl: string;
+    duration?: number;
+    youtubeId?: string;
+    videoPreviewStart?: number;
+  }): Promise<Song> => {
+    const ytId = meta.youtubeId || extractYouTubeId(meta.audioUrl);
+    const cloudRes = await addUrlSongToCloud({
+      title: meta.title,
+      artist: meta.artist,
+      album: meta.album || (ytId ? 'YouTube Music' : 'Nhạc Trực Tuyến'),
+      coverUrl: meta.coverUrl,
+      audioUrl: ytId ? `https://www.youtube.com/watch?v=${ytId}` : meta.audioUrl,
+      duration: meta.duration || 210,
+    });
+
+    let createdSong = cloudRes.song;
+
+    if (!createdSong) {
+      const songId = `url_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      createdSong = {
+        id: songId,
+        title: meta.title,
+        artist: meta.artist,
+        album: meta.album || (ytId ? 'YouTube Music' : 'Nhạc Trực Tuyến'),
+        coverUrl:
+          meta.coverUrl ||
+          (ytId
+            ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`
+            : 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=800&auto=format&fit=crop'),
+        duration: meta.duration || 210,
+        audioUrl: ytId ? `https://www.youtube.com/watch?v=${ytId}` : meta.audioUrl,
+        youtubeId: ytId || undefined,
+        isYoutube: !!ytId,
+        videoPreviewStart: meta.videoPreviewStart || 0,
+        genre: ytId ? 'YouTube / Online' : 'Nhạc Trực Tuyến',
+        mood: ['Tất cả', 'Chill & Thư giãn'],
+        isLiked: true,
+        plays: 1,
+        releaseYear: new Date().getFullYear(),
+        accentColor: accentTheme.color,
+        isCustomUpload: true,
+        uploadedAt: new Date().toISOString(),
+      };
+    } else {
+      if (ytId) {
+        createdSong.youtubeId = ytId;
+        createdSong.isYoutube = true;
+      }
+      if (meta.videoPreviewStart) {
+        createdSong.videoPreviewStart = meta.videoPreviewStart;
+      }
+    }
+
+    // Update state & LocalStorage
+    setCustomSongs((prev) => {
+      const updated = [createdSong!, ...prev.filter((s) => s.id !== createdSong!.id)];
+      saveStoredCustomSongsMeta(updated);
+      return updated;
+    });
+
+    // Auto-like
+    setLikedSongIds((prev) => {
+      const next = new Set(prev).add(createdSong!.id);
+      saveStoredLikedSongs(next);
+      return next;
+    });
+
+    return createdSong;
+  };
+
   // Delete Song (Supabase Cloud + IndexedDB local)
   const deleteSong = async (songId: string): Promise<void> => {
     const songToDelete = customSongs.find((s) => s.id === songId);
@@ -929,6 +1015,7 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
         toggleTurntableMode,
         getAudioWaveform,
         uploadCustomSong,
+        addSongByUrl,
         deleteSong,
         setIsUploadModalOpen,
         toggleOfflineDownload,

@@ -24,7 +24,9 @@ import { useMusic } from '../../context/MusicPlayerContext';
 import { SyncedLyrics } from './SyncedLyrics';
 import { QueueView } from './QueueView';
 import { Visualizer } from './Visualizer';
+import { VideoClipView } from './VideoClipView';
 import { SleepTimerButton } from './SleepTimerButton';
+import { YouTubeIcon } from '../common/YouTubeIcon';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const FullPlayer: React.FC = () => {
@@ -166,12 +168,12 @@ export const FullPlayer: React.FC = () => {
           <SleepTimerButton />
         </div>
 
-        {/* Sub-Tab Navigation Switcher (Trình phát / Lời bài hát / Hàng đợi) */}
-        <div className="px-6 py-2 flex items-center justify-center z-20">
-          <div className="p-1 rounded-2xl glass-card flex items-center gap-1 border border-white/10">
+        {/* Sub-Tab Navigation Switcher (Trình phát / Video Clip / Lời bài hát / Hàng đợi) */}
+        <div className="px-4 py-2 flex items-center justify-center z-20">
+          <div className="p-1 rounded-2xl glass-card flex items-center gap-1 border border-white/10 overflow-x-auto no-scrollbar max-w-full">
             <button
               onClick={() => setPlayerSubTab('player')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex-shrink-0 ${
                 playerSubTab === 'player'
                   ? 'bg-white/20 text-white shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -181,8 +183,19 @@ export const FullPlayer: React.FC = () => {
               Đĩa nhạc
             </button>
             <button
+              onClick={() => setPlayerSubTab('video')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex-shrink-0 ${
+                playerSubTab === 'video'
+                  ? 'bg-white/20 text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <YouTubeIcon className="w-3.5 h-3.5 text-red-500 fill-red-500" />
+              Video Clip
+            </button>
+            <button
               onClick={() => setPlayerSubTab('lyrics')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex-shrink-0 ${
                 playerSubTab === 'lyrics'
                   ? 'bg-white/20 text-white shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -193,7 +206,7 @@ export const FullPlayer: React.FC = () => {
             </button>
             <button
               onClick={() => setPlayerSubTab('queue')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex-shrink-0 ${
                 playerSubTab === 'queue'
                   ? 'bg-white/20 text-white shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -247,6 +260,17 @@ export const FullPlayer: React.FC = () => {
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
+
+                    {/* YouTube Video intro clip preview chip if YouTube track */}
+                    {(currentSong.isYoutube || currentSong.youtubeId) && (
+                      <button
+                        onClick={() => setPlayerSubTab('video')}
+                        className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full glass-panel text-[11px] font-bold text-white border border-red-500/40 shadow-xl flex items-center gap-1.5 hover:scale-105 transition-all cursor-pointer bg-black/60"
+                      >
+                        <YouTubeIcon className="w-3.5 h-3.5 text-red-500 fill-red-500" />
+                        <span>Xem Video Intro</span>
+                      </button>
+                    )}
                   </motion.div>
                 )}
 
@@ -267,6 +291,8 @@ export const FullPlayer: React.FC = () => {
               </div>
             </div>
           )}
+
+          {playerSubTab === 'video' && <VideoClipView />}
 
           {playerSubTab === 'lyrics' && <SyncedLyrics />}
 
