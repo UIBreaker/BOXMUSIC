@@ -31,6 +31,7 @@ const MainAppLayout: React.FC = () => {
     setIsCreatePlaylistOpen,
     importLibraryBackup,
     accentTheme,
+    dynamicCoverColor,
   } = useMusic();
 
   const [autoSyncToast, setAutoSyncToast] = useState<string | null>(null);
@@ -62,14 +63,14 @@ const MainAppLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen h-screen w-screen bg-[#050608] text-zinc-100 flex flex-col overflow-hidden select-none font-sans relative">
-      {/* Background Dynamic Ambient Auras */}
+      {/* Background Dynamic Ambient Auras — reacts to current song's cover art color */}
       <div
-        className="absolute top-0 left-1/4 w-[500px] h-[500px] rounded-full blur-[160px] opacity-15 pointer-events-none transition-all duration-1000"
-        style={{ backgroundColor: accentTheme.color }}
+        className="absolute top-0 left-1/4 w-[500px] h-[500px] rounded-full blur-[160px] opacity-15 pointer-events-none transition-all duration-[2000ms]"
+        style={{ backgroundColor: dynamicCoverColor || accentTheme.color }}
       />
       <div
-        className="absolute bottom-1/3 right-1/4 w-[500px] h-[500px] rounded-full blur-[160px] opacity-10 pointer-events-none transition-all duration-1000"
-        style={{ backgroundColor: '#6366F1' }}
+        className="absolute bottom-1/3 right-1/4 w-[500px] h-[500px] rounded-full blur-[160px] opacity-10 pointer-events-none transition-all duration-[2000ms]"
+        style={{ backgroundColor: dynamicCoverColor ? `${dynamicCoverColor}88` : '#6366F1' }}
       />
 
       {/* Main Workspace Body */}

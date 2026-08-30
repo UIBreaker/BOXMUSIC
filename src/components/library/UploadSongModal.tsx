@@ -9,8 +9,10 @@ import {
   FileAudio,
   Image as ImageIcon,
   Cloud,
+  Wand2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { parseID3Tags } from '../../services/mobileFeatures';
 
 const PRESET_COVERS = [
   'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=800&auto=format&fit=crop',
@@ -34,14 +36,20 @@ export const UploadSongModal: React.FC = () => {
   const [artist, setArtist] = useState('');
   const [album, setAlbum] = useState('Nhạc Tải Lên Đám Mây');
   const [coverUrl, setCoverUrl] = useState(PRESET_COVERS[0]);
+  const [embeddedCoverUrl, setEmbeddedCoverUrl] = useState<string | null>(null);
+  const [isParsingTags, setIsParsingTags] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!isUploadModalOpen) return null;
 
-  const handleFileChange = (file: File) => {
+  const handleFileChange = async (file: File) => {
     setSelectedFile(file);
+    setIsParsingTags(true);
+    setEmbeddedCoverUrl(null);
+
+    // Fallback: parse title/artist from filename
     const cleanName = file.name.replace(/\.[^/.]+$/, '');
     if (cleanName.includes(' - ')) {
       const parts = cleanName.split(' - ');
@@ -51,6 +59,22 @@ export const UploadSongModal: React.FC = () => {
       setTitle(cleanName);
       setArtist('Bạn');
     }
+
+    // Auto-parse ID3 tags from MP3/FLAC file
+    try {
+      const tags = await parseID3Tags(file);
+      if (tags.title) setTitle(tags.title);
+      if (tags.artist) setArtist(tags.artist);
+      if (tags.album) setAlbum(tags.album);
+      if (tags.coverUrl) {
+        setEmbeddedCoverUrl(tags.coverUrl);
+        setCoverUrl(tags.coverUrl);
+      }
+    } catch {
+      // fallback is already set
+    }
+
+    setIsParsingTags(false);
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -82,6 +106,9 @@ export const UploadSongModal: React.FC = () => {
         setSelectedFile(null);
         setTitle('');
         setArtist('');
+        setAlbum('Nhạc Tải Lên Đám Mây');
+        setEmbeddedCoverUrl(null);
+        setCoverUrl(PRESET_COVERS[0]);
         if (createdSong) {
           playSong(createdSong);
         }
@@ -125,7 +152,7 @@ export const UploadSongModal: React.FC = () => {
                   Tải Nhạc Lên Cloud Database
                 </h3>
                 <p className="text-xs text-zinc-400">
-                  Lưu trữ đám mây Supabase • Đồng bộ ngay với Điện thoại
+                  Supabase Cloud • Đồng bộ tức thì mọi thiết bị
                 </p>
               </div>
             </div>
@@ -157,8 +184,8 @@ export const UploadSongModal: React.FC = () => {
                 />
 
                 <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-black shadow-lg group-hover:scale-110 transition-transform"
-                  style={{ backgroundColor: `${accentTheme.color}30`, color: accentTheme.color }}
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"
+                  style={{ backgroundColor: `${accentTheme.color}25`, color: accentTheme.color }}
                 >
                   <UploadCloud className="w-7 h-7" />
                 </div>
@@ -168,12 +195,11 @@ export const UploadSongModal: React.FC = () => {
                     Kéo thả hoặc Bấm để chọn file nhạc
                   </p>
                   <p className="text-xs text-zinc-400 mt-1">
-                    MP3, MP4, M4A, FLAC, WAV (Lưu vào Cloud Supabase)
+                    MP3, MP4, M4A, FLAC, WAV • Tự động đọc metadata ID3
                   </p>
                 </div>
               </div>
             ) : (
-              /* Selected File Card */
               <div className="p-3.5 rounded-2xl glass-card border border-emerald-500/30 flex items-center justify-between">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
@@ -181,18 +207,24 @@ export const UploadSongModal: React.FC = () => {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold text-white truncate">{selectedFile.name}</p>
-                    <p className="text-[10px] text-zinc-400 mt-0.5">
-                      {formatFileSize(selectedFile.size)} • Sẵn sàng tải lên Cloud
+                    <p className="text-[10px] text-zinc-400 mt-0.5 flex items-center gap-1">
+                      {formatFileSize(selectedFile.size)}
+                      {isParsingTags && (
+                        <span className="text-amber-400 flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" /> Đọc ID3 tags...
+                        </span>
+                      )}
+                      {!isParsingTags && <span className="text-emerald-400">• Đã đọc metadata ✓</span>}
                     </p>
                   </div>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setSelectedFile(null)}
+                  onClick={() => { setSelectedFile(null); setEmbeddedCoverUrl(null); }}
                   className="text-xs font-semibold text-rose-400 hover:underline cursor-pointer pl-2"
                 >
-                  Đổi file khác
+                  Đổi file
                 </button>
               </div>
             )}
@@ -200,6 +232,14 @@ export const UploadSongModal: React.FC = () => {
             {/* Metadata Fields */}
             {selectedFile && (
               <div className="space-y-3 pt-1">
+                {/* ID3 Auto-fill badge */}
+                {(title || artist) && !isParsingTags && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-semibold">
+                    <Wand2 className="w-3.5 h-3.5" />
+                    <span>Tự động điền từ ID3 Tag — chỉnh sửa nếu cần</span>
+                  </div>
+                )}
+
                 {/* Title */}
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-zinc-300 uppercase tracking-wider">
@@ -251,6 +291,29 @@ export const UploadSongModal: React.FC = () => {
                     Ảnh bìa bài hát
                   </label>
                   <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                    {/* Embedded cover from ID3 tags (shown first if available) */}
+                    {embeddedCoverUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setCoverUrl(embeddedCoverUrl)}
+                        className={`relative w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 border-2 transition-all cursor-pointer ${
+                          coverUrl === embeddedCoverUrl
+                            ? 'border-emerald-400 scale-105 shadow-md'
+                            : 'border-transparent opacity-80 hover:opacity-100'
+                        }`}
+                      >
+                        <img src={embeddedCoverUrl} alt="ID3 cover" className="w-full h-full object-cover" />
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[8px] text-center text-emerald-300 font-bold py-0.5">
+                          ID3
+                        </div>
+                        {coverUrl === embeddedCoverUrl && (
+                          <div className="absolute inset-0 bg-emerald-500/30 flex items-center justify-center">
+                            <CheckCircle2 className="w-4 h-4 text-white" />
+                          </div>
+                        )}
+                      </button>
+                    )}
+                    {/* Preset covers */}
                     {PRESET_COVERS.map((preset, idx) => (
                       <button
                         type="button"
@@ -275,11 +338,11 @@ export const UploadSongModal: React.FC = () => {
               </div>
             )}
 
-            {/* Success feedback toast */}
+            {/* Success feedback */}
             {uploadSuccess && (
               <div className="p-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Đã tải lên Cloud Database thành công & đồng bộ tới mọi thiết bị!</span>
+                <span>Đã tải lên Cloud & đồng bộ tới mọi thiết bị!</span>
               </div>
             )}
 
@@ -287,8 +350,8 @@ export const UploadSongModal: React.FC = () => {
             {selectedFile && !uploadSuccess && (
               <button
                 type="submit"
-                disabled={isUploading}
-                className="w-full py-3 rounded-2xl font-bold text-xs sm:text-sm text-black flex items-center justify-center gap-2 shadow-xl transition-all cursor-pointer"
+                disabled={isUploading || isParsingTags}
+                className="w-full py-3 rounded-2xl font-bold text-xs sm:text-sm text-black flex items-center justify-center gap-2 shadow-xl transition-all cursor-pointer disabled:opacity-60"
                 style={{
                   backgroundColor: accentTheme.color,
                   boxShadow: `0 0 20px ${accentTheme.glow}`,
@@ -297,7 +360,7 @@ export const UploadSongModal: React.FC = () => {
                 {isUploading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Đang tải lên Supabase Cloud Storage...</span>
+                    <span>Đang tải lên Supabase Cloud...</span>
                   </>
                 ) : (
                   <>

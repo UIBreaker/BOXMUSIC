@@ -15,7 +15,6 @@ import {
   Volume2,
   VolumeX,
   Share2,
-  Clock,
   Check,
   ArrowDownToLine,
   CheckCircle2,
@@ -25,6 +24,7 @@ import { useMusic } from '../../context/MusicPlayerContext';
 import { SyncedLyrics } from './SyncedLyrics';
 import { QueueView } from './QueueView';
 import { Visualizer } from './Visualizer';
+import { SleepTimerButton } from './SleepTimerButton';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const FullPlayer: React.FC = () => {
@@ -60,8 +60,6 @@ export const FullPlayer: React.FC = () => {
   } = useMusic();
 
   const [showShareToast, setShowShareToast] = useState(false);
-  const [showSleepTimerModal, setShowSleepTimerModal] = useState(false);
-  const [sleepTimerMinutes, setSleepTimerMinutes] = useState<number | null>(null);
 
   if (!isFullScreen || !currentSong) return null;
 
@@ -99,17 +97,6 @@ export const FullPlayer: React.FC = () => {
     }
   };
 
-  const handleSetSleepTimer = (minutes: number | null) => {
-    setSleepTimerMinutes(minutes);
-    setShowSleepTimerModal(false);
-    if (minutes) {
-      setTimeout(() => {
-        if (isPlaying) togglePlay();
-        setSleepTimerMinutes(null);
-      }, minutes * 60 * 1000);
-    }
-  };
-
   return (
     <AnimatePresence>
       <motion.div
@@ -119,9 +106,9 @@ export const FullPlayer: React.FC = () => {
         transition={{ type: 'spring', damping: 28, stiffness: 280 }}
         className="fixed inset-0 z-50 flex flex-col bg-[#080a10] text-white select-none overflow-hidden max-w-md mx-auto"
       >
-        {/* Dynamic Ambient Background Glow */}
+        {/* Dynamic Ambient Background Glow — reacts to album art color */}
         <div
-          className="absolute -top-24 left-1/2 -translate-x-1/2 w-[340px] h-[340px] rounded-full blur-[130px] opacity-35 pointer-events-none transition-all duration-1000"
+          className="absolute -top-24 left-1/2 -translate-x-1/2 w-[340px] h-[340px] rounded-full blur-[130px] opacity-35 pointer-events-none transition-all duration-[2000ms]"
           style={{ backgroundColor: currentSong.accentColor || accentTheme.color }}
         />
 
@@ -163,17 +150,6 @@ export const FullPlayer: React.FC = () => {
               )}
             </button>
 
-            {/* Sleep Timer */}
-            <button
-              onClick={() => setShowSleepTimerModal(true)}
-              className={`w-9 h-9 rounded-full glass-card flex items-center justify-center transition-colors cursor-pointer ${
-                sleepTimerMinutes ? 'text-emerald-400 border-emerald-500/40' : 'text-zinc-400 hover:text-white'
-              }`}
-              title="Hẹn giờ tắt nhạc"
-            >
-              <Clock className="w-4 h-4" />
-            </button>
-
             {/* Share */}
             <button
               onClick={handleShare}
@@ -183,6 +159,11 @@ export const FullPlayer: React.FC = () => {
               <Share2 className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        {/* Sleep Timer — shown below top bar */}
+        <div className="px-4 pb-1 flex justify-end z-20">
+          <SleepTimerButton />
         </div>
 
         {/* Sub-Tab Navigation Switcher (Trình phát / Lời bài hát / Hàng đợi) */}
@@ -465,60 +446,6 @@ export const FullPlayer: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {/* Sleep Timer Modal */}
-        <AnimatePresence>
-          {showSleepTimerModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div
-                className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-                onClick={() => setShowSleepTimerModal(false)}
-              />
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                className="relative z-10 w-full max-w-xs glass-panel p-5 rounded-3xl border border-white/15 text-center shadow-2xl"
-              >
-                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-3">
-                  <Clock className="w-6 h-6" />
-                </div>
-                <h3 className="text-base font-bold text-white mb-1">Hẹn giờ tắt nhạc</h3>
-                <p className="text-xs text-zinc-400 mb-4">
-                  Nhạc sẽ tự động tạm dừng sau thời gian đã chọn.
-                </p>
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  {[15, 30, 45, 60].map((mins) => (
-                    <button
-                      key={mins}
-                      onClick={() => handleSetSleepTimer(mins)}
-                      className={`p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                        sleepTimerMinutes === mins
-                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                          : 'glass-card border-white/10 text-zinc-300 hover:bg-white/10'
-                      }`}
-                    >
-                      {mins} phút
-                    </button>
-                  ))}
-                </div>
-                {sleepTimerMinutes && (
-                  <button
-                    onClick={() => handleSetSleepTimer(null)}
-                    className="w-full py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 mb-2 transition-colors cursor-pointer"
-                  >
-                    Tắt hẹn giờ
-                  </button>
-                )}
-                <button
-                  onClick={() => setShowSleepTimerModal(false)}
-                  className="w-full py-2 rounded-xl glass-card text-xs font-semibold text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                >
-                  Đóng
-                </button>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
       </motion.div>
     </AnimatePresence>
   );

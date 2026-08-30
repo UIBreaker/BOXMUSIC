@@ -42,6 +42,13 @@ import {
   subscribeToSongUpdates,
 } from '../services/supabase';
 import confetti from 'canvas-confetti';
+import {
+  updateMediaSession,
+  setMediaSessionHandlers,
+  setMediaSessionPlaybackState,
+  extractDominantColor,
+  haptic,
+} from '../services/mobileFeatures';
 
 interface MusicContextType {
   currentSong: Song | null;
@@ -122,6 +129,10 @@ interface MusicContextType {
   setSelectedArtist: (artist: Artist | null) => void;
   setSelectedPlaylist: (playlist: Playlist | null) => void;
   setIsCreatePlaylistOpen: (val: boolean) => void;
+
+  // Dynamic Color & Sleep Timer
+  dynamicCoverColor: string | null;
+  setSleepTimer: (minutes: number | null) => void;
 }
 
 const MusicContext = createContext<MusicContextType | undefined>(undefined);
@@ -174,6 +185,12 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [downloadingSongIds, setDownloadingSongIds] = useState<Set<string>>(new Set());
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
+
+  // Dynamic Album Cover Color
+  const [dynamicCoverColor, setDynamicCoverColor] = useState<string | null>(null);
+
+  // Sleep Timer
+  const sleepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Desktop Pro States
   const [desktopRightPanelTab, setDesktopRightPanelTab] = useState<DesktopRightPanelTab>('nowPlaying');
@@ -317,6 +334,18 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
     saveStoredTheme(accentTheme);
   }, [accentTheme]);
 
+  // Register Media Session action handlers (lock screen controls)
+  useEffect(() => {
+    setMediaSessionHandlers({
+      onPlay: () => { if (audioRef.current) { audioRef.current.play().catch(() => {}); setIsPlaying(true); setMediaSessionPlaybackState('playing'); } },
+      onPause: () => { if (audioRef.current) audioRef.current.pause(); setIsPlaying(false); setMediaSessionPlaybackState('paused'); },
+      onNextTrack: () => nextSong(),
+      onPreviousTrack: () => prevSong(),
+      onSeekForward: () => { if (audioRef.current) audioRef.current.currentTime = Math.min(audioRef.current.duration, audioRef.current.currentTime + 10); },
+      onSeekBackward: () => { if (audioRef.current) audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 10); },
+    });
+  }, []);
+
   // Audio timer ticker fallback
   useEffect(() => {
     if (isPlaying) {
@@ -365,6 +394,22 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
     // Add to history
     setHistory((prev) => [song, ...prev.filter((s) => s.id !== song.id)].slice(0, 20));
 
+    // Media Session API — update lock screen / notification info
+    updateMediaSession({
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      coverUrl: song.coverUrl,
+    });
+    setMediaSessionPlaybackState('playing');
+
+    // Extract dominant color from album art for dynamic background
+    if (song.coverUrl) {
+      extractDominantColor(song.coverUrl).then((color) => {
+        setDynamicCoverColor(color);
+      });
+    }
+
     if (audioRef.current) {
       // 1. If song is cached in IndexedDB, use local blob URL
       let playUrl: string | null = await getOfflineAudioBlobUrl(song.id);
@@ -394,18 +439,22 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
       return;
     }
 
+    haptic.light();
     if (isPlaying) {
       if (audioRef.current) audioRef.current.pause();
       setIsPlaying(false);
+      setMediaSessionPlaybackState('paused');
     } else {
       if (audioRef.current) {
         audioRef.current.play().catch(() => {});
       }
       setIsPlaying(true);
+      setMediaSessionPlaybackState('playing');
     }
   };
 
   const nextSong = () => {
+    haptic.skip();
     if (queue.length === 0) {
       if (repeatMode === 'all' && history.length > 0) {
         const resetQueue = [...allSongs];
@@ -793,6 +842,37 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
     saveStoredTheme(theme);
   };
 
+  // Sleep Timer — auto-stop playback after N minutes
+  const setSleepTimer = (minutes: number | null) => {
+    if (sleepTimerRef.current) {
+      clearTimeout(sleepTimerRef.current);
+      sleepTimerRef.current = null;
+    }
+    if (minutes !== null && minutes > 0) {
+      sleepTimerRef.current = setTimeout(() => {
+        // Fade out over 3 seconds then pause
+        if (audioRef.current) {
+          const audio = audioRef.current;
+          const originalVol = audio.volume;
+          const fadeSteps = 30;
+          const stepTime = 3000 / fadeSteps;
+          let step = 0;
+          const fadeInterval = setInterval(() => {
+            step++;
+            audio.volume = Math.max(0, originalVol * (1 - step / fadeSteps));
+            if (step >= fadeSteps) {
+              clearInterval(fadeInterval);
+              audio.pause();
+              audio.volume = originalVol;
+              setIsPlaying(false);
+              setMediaSessionPlaybackState('paused');
+            }
+          }, stepTime);
+        }
+      }, minutes * 60 * 1000);
+    }
+  };
+
   return (
     <MusicContext.Provider
       value={{
@@ -862,6 +942,8 @@ export const MusicPlayerProvider: React.FC<{ children: ReactNode }> = ({ childre
         setSelectedArtist,
         setSelectedPlaylist,
         setIsCreatePlaylistOpen,
+        dynamicCoverColor,
+        setSleepTimer,
       }}
     >
       {children}
